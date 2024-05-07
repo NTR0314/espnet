@@ -23,6 +23,12 @@ min() {
 
 SECONDS=0
 
+# OSWALD: i_lm_test configuration
+gpu_id=
+# OSWALD: Used for approach2 inference
+blocks_inference=
+blocks_training=
+
 # General configuration
 stage=1              # Processes starts from the specified stage.
 stop_stage=10000     # Processes is stopped at the specified stage.
@@ -45,6 +51,7 @@ python=python3       # Specify python to execute espnet commands.
 # Data preparation related
 local_data_opts= # The options given to local/data.sh.
 post_process_local_data_opts= # The options given to local/data.sh for additional processing in stage 4.
+# Tips from Yosuke: might not get passed to inference script
 auxiliary_data_tags= # the names of training data for auxiliary tasks
 
 # Speed perturbation related
@@ -1314,6 +1321,9 @@ if [ ${stage} -le 11 ] && [ ${stop_stage} -ge 11 ] && ! [[ " ${skip_stages} " =~
         #   % python3 -m espnet2.bin.asr_train --print_config --optim adam
         _opts+="--config ${asr_config} "
     fi
+    if [ -n "${blocks_training}" ]; then
+        _opts+="--blocks_training ${blocks_training} "
+    fi
 
     _feats_type="$(<${_asr_train_dir}/feats_type)"
     _audio_format="$(cat ${_asr_train_dir}/audio_format 2>/dev/null || echo ${audio_format})"
@@ -1417,6 +1427,10 @@ if [ ${stage} -le 11 ] && [ ${stop_stage} -ge 11 ] && ! [[ " ${skip_stages} " =~
         jobname="${asr_exp}/train.log"
     fi
 
+    # [OSWALD]: set gpu
+    echo "Exporting CUDA_VISIBLE_DEVICES to ${gpu_id}"
+    export CUDA_VISIBLE_DEVICES=${gpu_id}
+
     # shellcheck disable=SC2086
     ${python} -m espnet2.bin.launch \
         --cmd "${cuda_cmd} --name ${jobname}" \
@@ -1489,6 +1503,11 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
     fi
 
     _opts=
+    # OSWALD: If blocks_inference is set then pass it as argument
+    # -n: Meaning that the string is nonzero e.g. not empty.
+    if [ -n "${blocks_inference}" ]; then
+        _opts+="--blocks_inference ${blocks_inference} "
+    fi
     if [ -n "${inference_config}" ]; then
         _opts+="--config ${inference_config} "
     fi
@@ -1572,13 +1591,21 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
 
         # 2. Submit decoding jobs
         log "Decoding started... log: '${_logdir}/asr_inference.*.log'"
+
+        # [OSWALD]: --aux_task_names "${auxiliary_data_tags}" \ weggemacht, weil wird nicht weitergepassed
         rm -f "${_logdir}/*.log"
+        # [OSWALD]: set gpu
+        echo "Exporting CUDA_VISIBLE_DEVICES to ${gpu_id}"
+        export CUDA_VISIBLE_DEVICES=${gpu_id}
+        # echo $CUDA_VISIBLE_DEVICES 
+
         # shellcheck disable=SC2046,SC2086
         ${_cmd} --gpu "${_ngpu}" JOB=1:"${_nj}" "${_logdir}"/asr_inference.JOB.log \
             ${python} -m espnet2.bin.${asr_task}_inference${inference_bin_tag} \
                 --batch_size ${batch_size} \
                 --ngpu "${_ngpu}" \
                 --data_path_and_name_and_type "${_data}/${_scp},speech,${_type}" \
+                --data_path_and_name_and_type "${_data}/text,text_gt,text" \
                 --key_file "${_logdir}"/keys.JOB.scp \
                 --asr_train_config "${asr_exp}"/config.yaml \
                 --asr_model_file "${asr_exp}"/"${inference_asr_model}" \

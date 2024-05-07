@@ -547,6 +547,7 @@ class Trainer:
             except TypeError:
                 log_interval = 100
 
+        # set model to training mode: dropout etc.
         model.train()
         all_steps_are_invalid = True
         # [For distributed] Because iteration counts are not always equals between
@@ -559,6 +560,7 @@ class Trainer:
         ):
             assert isinstance(batch, dict), type(batch)
 
+            # OSWALD nope
             if distributed:
                 torch.distributed.all_reduce(iterator_stop, ReduceOp.SUM)
                 if iterator_stop > 0:
@@ -567,10 +569,12 @@ class Trainer:
             batch["utt_id"] = utt_id
 
             batch = to_device(batch, "cuda" if ngpu > 0 else "cpu")
+            # OSWALD nope
             if no_forward_run:
                 all_steps_are_invalid = False
                 continue
 
+            # OSWALD nope
             if (
                 create_graph_in_tensorboard
                 and iiter == 1

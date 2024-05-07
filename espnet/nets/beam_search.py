@@ -194,6 +194,8 @@ class BeamSearch(torch.nn.Module):
         scores = dict()
         states = dict()
         for k, d in self.full_scorers.items():
+            # [OSWALD]: Does not get called during inference?
+            # import pdb; pdb.set_trace()
             if "decoder" in k and self.return_hs:
                 scores[k], hs, states[k] = d.score(
                     hyp.yseq, hyp.states[k], x, return_hs=self.return_hs
@@ -332,6 +334,8 @@ class BeamSearch(torch.nn.Module):
             List[Hypotheses]: Best sorted hypotheses
 
         """
+        # [OSWALD]: does not get called during inference.
+        # import pdb; pdb.set_trace()
         best_hyps = []
         part_ids = torch.arange(self.n_vocab, device=x.device)  # no pre-beam
         for hyp in running_hyps:
@@ -388,6 +392,7 @@ class BeamSearch(torch.nn.Module):
         maxlenratio: float = 0.0,
         minlenratio: float = 0.0,
         pre_x: torch.Tensor = None,
+        text_gt = None
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -425,16 +430,37 @@ class BeamSearch(torch.nn.Module):
             minlen = -1 * int(minlenratio)
         else:
             minlen = int(minlenratio * inp.size(0))
+        # import pdb; pdb.set_trace()
         logger.info("decoder input length: " + str(inp.shape[0]))
         logger.info("max output length: " + str(maxlen))
         logger.info("min output length: " + str(minlen))
 
         # main loop of prefix search
-        running_hyps = self.init_hyp(x if pre_x is None else pre_x)
+        # TODO [OSWALD]: evtl kann ich hierdecoder initiliasieren
+        # Ist .init_hyp() von batch_beam_search.py
+        #
+        # return BatchHypothesis(
+        #     yseq=pad_sequence(
+        #         [h.yseq for h in hyps], batch_first=True, padding_value=self.eos
+        #     ),
+        #     length=torch.tensor([len(h.yseq) for h in hyps], dtype=torch.int64),
+        #     score=torch.tensor([h.score for h in hyps]), combined score
+        #     scores={k: torch.tensor([h.scores[k] for h in hyps]) for k in self.scorers}, CTC and decoder
+        #     states={k: [h.states[k] for h in hyps] for k in self.scorers}, liste (20), liste(6), Tensor(1, 256)
+        #     hs=hs, Encoder states
+        # )
+        running_hyps = self.init_hyp(x if pre_x is None else pre_x, text_gt)
+        # [OSWALD]: running_hyps is a Tensor, not readable would need tokenizer here.
+        # logging.info(f"{running_hyps=}") 
         ended_hyps = []
-        for i in range(maxlen):
+        i_start = 0 if text_gt is None else len(text_gt)
+        for i in range(i_start, maxlen):
             logger.debug("position " + str(i))
+            # Glaube hier wird alles durch den Decoder gejagt
+            # import pdb; pdb.set_trace()
+            # [OSWALD]: Hier wird die search Funktion von batch beam serach afgerufen
             best = self.search(running_hyps, x, pre_x=pre_x)
+            # import pdb; pdb.set_trace()
             # post process of one iteration
             running_hyps = self.post_process(
                 i, maxlen, minlen, maxlenratio, best, ended_hyps

@@ -127,11 +127,12 @@ class BatchBeamSearch(BeamSearch):
         new_token_ids = top_ids % self.n_vocab
         return prev_hyp_ids, new_token_ids, prev_hyp_ids, new_token_ids
 
-    def init_hyp(self, x: torch.Tensor) -> BatchHypothesis:
+    def init_hyp(self, x: torch.Tensor, y: torch.Tensor=None) -> BatchHypothesis:
         """Get an initial hypothesis data.
 
         Args:
             x (torch.Tensor): The encoder output feature
+            y: initial value of decoder (kinda like prompt)
 
         Returns:
             Hypothesis: The initial hypothesis.
@@ -145,6 +146,23 @@ class BatchBeamSearch(BeamSearch):
 
         # NOTE (Shih-Lun): added for OpenAI Whisper ASR
         primer = [self.sos] if self.hyp_primer is None else self.hyp_primer
+        if y is not None:
+            logging.info(f"Using prefix text as i_lm_test: {y}")
+            # Idk why but y/text_gt is on CPU -> move to GPU
+            y = y.to(x.device)
+            y = torch.cat((torch.tensor(primer, device=x.device), y))
+            # logging.info(f"{y=}") 
+            return self.batchfy(
+            [
+                Hypothesis(
+                    score=0.0,
+                    scores=init_scores,
+                    states=init_states,
+                    hs=[],
+                    yseq=y
+                )
+            ]
+            )
 
         return self.batchfy(
             [
@@ -184,10 +202,12 @@ class BatchBeamSearch(BeamSearch):
         scores = dict()
         states = dict()
         for k, d in self.full_scorers.items():
+            # [OSWALD]: self.return_hs = False
             if "decoder" in k and self.return_hs:
                 (scores[k], hs), states[k] = d.batch_score(
                     hyp.yseq, hyp.states[k], x, return_hs=self.return_hs
                 )
+            # [OSWALD]: Nein, benutzen kein sequential attention = pre_x
             elif "decoder" in k and pre_x is not None:
                 scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x, pre_x)
             else:
@@ -273,12 +293,14 @@ class BatchBeamSearch(BeamSearch):
             BatchHypothesis: Best sorted hypotheses
 
         """
+        # [OSWALD]: TODO study this function
         n_batch = len(running_hyps)
         part_ids = None  # no pre-beam
-        # batch scoring
+        # batch scoring (B x Vocab)
         weighted_scores = torch.zeros(
             n_batch, self.n_vocab, dtype=x.dtype, device=x.device
         )
+        # [OSWALD]: Nein, scheinbar nur bei RNNs iirc laut Yosuke
         if self.return_hs:
             hs, scores, states = self.score_full(
                 running_hyps,

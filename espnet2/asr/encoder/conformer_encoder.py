@@ -154,6 +154,7 @@ class ConformerEncoder(AbsEncoder):
                 torch.nn.Dropout(dropout_rate),
                 pos_enc_class(output_size, positional_dropout_rate, max_pos_emb_len),
             )
+        # OSWALD: scheinbar das
         elif input_layer == "conv2d":
             self.embed = Conv2dSubsampling(
                 input_size,

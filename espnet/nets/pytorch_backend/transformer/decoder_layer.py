@@ -150,6 +150,7 @@ class DecoderLayer(nn.Module):
                 x = self.norm4(x)
 
         residual = x
+        import pdb; pdb.set_trace()
         if self.normalize_before:
             x = self.norm2(x)
         if self.concat_after:

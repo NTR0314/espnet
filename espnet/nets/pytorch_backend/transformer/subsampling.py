@@ -7,6 +7,7 @@
 """Subsampling layer definition."""
 
 import torch
+import numpy
 
 from espnet.nets.pytorch_backend.transformer.embedding import PositionalEncoding
 

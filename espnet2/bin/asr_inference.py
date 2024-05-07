@@ -116,7 +116,6 @@ class Speech2Text:
         prompt_token_file: Optional[str] = None,
     ):
         assert check_argument_types()
-
         task = ASRTask if not enh_s2t_task else EnhS2TTask
 
         if quantize_asr_model or quantize_lm:
@@ -133,6 +132,9 @@ class Speech2Text:
 
         # 1. Build ASR model
         scorers = {}
+        # print(f"{asr_train_config=}") # path to config
+        # print(f"{asr_model_file=}")
+        # OSWALD: model gets initialized only based on training args not inference args
         asr_model, asr_train_args = task.build_model_from_file(
             asr_train_config, asr_model_file, device
         )
@@ -162,6 +164,7 @@ class Speech2Text:
 
         ctc = CTCPrefixScorer(ctc=asr_model.ctc, eos=asr_model.eos)
         token_list = asr_model.token_list
+        # scorers bis dato leeres dict.
         scorers.update(
             decoder=decoder,
             ctc=ctc,
@@ -198,7 +201,7 @@ class Speech2Text:
         scorers["ngram"] = ngram
 
         # 4. Build BeamSearch object
-        if asr_model.use_transducer_decoder:
+        if asr_model.use_transducer_decoder: #Nope
             # In multi-blank RNNT, we assume all big blanks are
             # just before the standard blank in token_list
             multi_blank_durations = getattr(
@@ -226,7 +229,7 @@ class Speech2Text:
             beam_search = None
             hugging_face_model = None
             hugging_face_linear_in = None
-        elif (
+        elif ( #Nope
             decoder.__class__.__name__ == "HuggingFaceTransformersDecoder"
             and hugging_face_decoder
         ):
@@ -294,6 +297,7 @@ class Speech2Text:
             hugging_face_model = None
             hugging_face_linear_in = None
 
+            # decoder 0.7, CTC: 0.3
             weights = dict(
                 decoder=1.0 - ctc_weight,
                 ctc=ctc_weight,
@@ -302,7 +306,7 @@ class Speech2Text:
                 length_bonus=penalty,
             )
 
-            if time_sync:
+            if time_sync: # Nope
                 if not hasattr(asr_model, "ctc"):
                     raise NotImplementedError(
                         "BeamSearchTimeSync without CTC is not supported."
@@ -322,6 +326,7 @@ class Speech2Text:
                     token_list=token_list,
                 )
             else:
+                # TODO: If we use text_gt as prefix for internal lm testing, CTC score should be 0
                 beam_search = BeamSearch(
                     beam_size=beam_size,
                     weights=weights,
@@ -342,6 +347,7 @@ class Speech2Text:
                         if not isinstance(v, BatchScorerInterface)
                     ]
                     if len(non_batch) == 0:
+                        # Kein Streaming
                         if streaming:
                             beam_search.__class__ = BatchBeamSearchOnlineSim
                             beam_search.set_streaming_config(asr_train_config)
@@ -365,6 +371,7 @@ class Speech2Text:
             logging.info(f"Decoding device={device}, dtype={dtype}")
 
         # 5. [Optional] Build Text converter: e.g. bpe-sym -> Text
+        # we use bpe
         if token_type is None:
             token_type = asr_train_args.token_type
         if bpemodel is None:
@@ -377,6 +384,7 @@ class Speech2Text:
 
         if token_type is None:
             tokenizer = None
+        # we use bpe, build tokenizer ...
         elif token_type == "bpe" or token_type == "hugging_face":
             if bpemodel is not None:
                 tokenizer = build_tokenizer(
@@ -460,7 +468,8 @@ class Speech2Text:
         self.multi_asr = multi_asr
 
     @torch.no_grad()
-    def __call__(self, speech: Union[torch.Tensor, np.ndarray]) -> Union[
+    #[OSWALD]: 
+    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0) -> Union[
         ListOfHypothesis,
         Tuple[
             ListOfHypothesis,
@@ -470,7 +479,8 @@ class Speech2Text:
         """Inference
 
         Args:
-            data: Input speech data
+            speech: Input speech data
+            text_gt: Ground truth text data
         Returns:
             text, token, token_int, hyp
 
@@ -492,7 +502,12 @@ class Speech2Text:
         batch = to_device(batch, device=self.device)
 
         # b. Forward Encoder
-        enc, enc_olens = self.asr_model.encode(**batch)
+        enc, enc_olens = self.asr_model.encode(**batch, blocks_inference = blocks_inference)
+
+        #[OSWALD]: Zero out encoder
+        if test_i_lm:
+            enc.zero_()
+
         if self.multi_asr:
             enc = enc.unbind(dim=1)  # (batch, num_inf, ...) -> num_inf x [batch, ...]
         if self.enh_s2t_task or self.multi_asr:
@@ -518,13 +533,20 @@ class Speech2Text:
         else:
             # Normal ASR
             intermediate_outs = None
-            if isinstance(enc, tuple):
+            if isinstance(enc, tuple): # No
                 intermediate_outs = enc[1]
                 enc = enc[0]
             assert len(enc) == 1, len(enc)
 
             # c. Passed the encoder result and the beam search
-            results = self._decode_single_sample(enc[0])
+            # [OSWALD]: put cut text_gt here
+            if test_i_lm:
+                logging.info(f"USING cutoff for i_lm testing: {i_lm_eval_cutoff=}")
+                text_gt_cut = text_gt[:-i_lm_eval_cutoff]
+                logging.getLogger().setLevel(logging.INFO)
+                results = self._decode_single_sample(enc[0], text_gt=text_gt_cut)
+            else:
+                results = self._decode_single_sample(enc[0])
 
             # Encoder intermediate CTC predictions
             if intermediate_outs is not None:
@@ -552,8 +574,8 @@ class Speech2Text:
 
         return res
 
-    def _decode_single_sample(self, enc: torch.Tensor):
-        if self.beam_search_transducer:
+    def _decode_single_sample(self, enc: torch.Tensor, text_gt=None):
+        if self.beam_search_transducer: # no
             logging.info("encoder output length: " + str(enc.shape[0]))
             nbest_hyps = self.beam_search_transducer(enc)
 
@@ -565,7 +587,7 @@ class Speech2Text:
             logging.info(
                 "best hypo: " + "".join(self.converter.ids2tokens(best.yseq[1:])) + "\n"
             )
-        elif self.hugging_face_model:
+        elif self.hugging_face_model: # no 
             num_beams = self.hugging_face_decoder_conf["num_beams"]
             enc = self.hugging_face_linear_in(enc).unsqueeze(0)
             if self.asr_model.decoder.causal_lm:
@@ -611,14 +633,15 @@ class Speech2Text:
                 + "\n"
             )
         else:
-            if hasattr(self.beam_search.nn_dict, "decoder"):
-                if isinstance(self.beam_search.nn_dict.decoder, S4Decoder):
+            if hasattr(self.beam_search.nn_dict, "decoder"): # yes
+                if isinstance(self.beam_search.nn_dict.decoder, S4Decoder): # nope
                     # Setup: required for S4 autoregressive generation
                     for module in self.beam_search.nn_dict.decoder.modules():
                         if hasattr(module, "setup_step"):
                             module.setup_step()
             nbest_hyps = self.beam_search(
-                x=enc, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
+                x=enc, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio,
+                text_gt=text_gt
             )
 
         nbest_hyps = nbest_hyps[: self.nbest]
@@ -723,6 +746,9 @@ def inference(
     lang_prompt_token: Optional[str],
     nlp_prompt_token: Optional[str],
     prompt_token_file: Optional[str],
+    i_lm_eval_cutoff: int,
+    blocks_inference: int = 0,
+    blocks_training: int = 0,
 ):
     assert check_argument_types()
     if batch_size > 1:
@@ -780,12 +806,22 @@ def inference(
         lang_prompt_token=lang_prompt_token,
         nlp_prompt_token=nlp_prompt_token,
     )
+    # That's the model
+    # print(f"{model_tag=}") # = None
+    # print(f"{speech2text_kwargs}") # Das ist die config von Training/ARchitecture aber nicht asr
     speech2text = Speech2Text.from_pretrained(
         model_tag=model_tag,
         **speech2text_kwargs,
     )
 
     # 3. Build data-iterator
+    # print(speech2text.asr_train_args) #-> Hier kein aux tasks
+
+    # [OSWALD]: TODO add aux_text_gt as arg in speech2text.asr_train_args with samevalue
+    from argparse import Namespace
+    a = vars(speech2text.asr_train_args)
+    a['aux_text_gt'] = 'text_gt'
+    speech2text.asr_train_args = Namespace(**a)
     loader = ASRTask.build_streaming_iterator(
         data_path_and_name_and_type,
         dtype=dtype,
@@ -795,22 +831,28 @@ def inference(
         preprocess_fn=ASRTask.build_preprocess_fn(speech2text.asr_train_args, False),
         collate_fn=ASRTask.build_collate_fn(speech2text.asr_train_args, False),
         allow_variable_data_keys=allow_variable_data_keys,
+        # Tips from Yosuke: If inference is on it might not load the text
         inference=True,
     )
 
     # 7 .Start for-loop
     # FIXME(kamo): The output format should be discussed about
     with DatadirWriter(output_dir) as writer:
+        # Hier wird ueber den Datensatz iteriert.
         for keys, batch in loader:
             assert isinstance(batch, dict), type(batch)
             assert all(isinstance(s, str) for s in keys), keys
             _bs = len(next(iter(batch.values())))
             assert len(keys) == _bs, f"{len(keys)} != {_bs}"
             batch = {k: v[0] for k, v in batch.items() if not k.endswith("_lengths")}
+            # logging.info(f"{batch=}") 
 
             # N-best list of (text, token, token_int, hyp_object)
             try:
-                results = speech2text(**batch)
+                test_i_lm = True if i_lm_eval_cutoff != 0 else False
+                plot_att = True
+                if not plot_att:
+                    results = speech2text(**batch, test_i_lm=test_i_lm, i_lm_eval_cutoff=i_lm_eval_cutoff, blocks_inference=blocks_inference)
             except TooShortUttError as e:
                 logging.warning(f"Utterance {keys} {e}")
                 hyp = Hypothesis(score=0.0, scores={}, states={}, yseq=[])
@@ -1099,7 +1141,85 @@ def get_parser():
         default=False,
         help="If true, best hypothesis is selected by length-normalized scores",
     )
+    group.add_argument(
+        "--i_lm_eval_cutoff",
+        type=int,
+        default=0,
+        help="How much of the ground truth is cut off for the internal_lm to predict. The number is the amount of subword units.",
+    )
+    group.add_argument(
+        "--blocks_training",
+        type=int,
+        default=0,
+        help="During Approach 2 the amount of encoder blocks to be masked during Training (before subsampling/conv -> 10ms per block)",
+    )
+    group.add_argument(
+        "--blocks_inference",
+        type=int,
+        default=0,
+        help="During Approach 2 the amount of encoder blocks to be added to the encoder (before subsampling/conv -> 10ms per block)",
+    )
     return parser
+
+@torch.no_grad()
+def plot_attention(
+    model: torch.nn.Module,
+    output_dir: Optional[Path],
+    batch
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+
+    model.eval()
+    assert isinstance(batch, dict), type(batch)
+
+    batch = to_device("cuda")
+    if no_forward_run:
+        continue
+
+    # 1. Forwarding model and gathering all attentions
+    #    calculate_all_attentions() uses single gpu only.
+    att_dict = calculate_all_attentions(model, batch)
+
+    # 2. Plot attentions: This part is slow due to matplotlib
+    for k, att_list in att_dict.items():
+        assert len(att_list) == len(ids), (len(att_list), len(ids))
+        for id_, att_w in zip(ids, att_list):
+            if isinstance(att_w, torch.Tensor):
+                att_w = att_w.detach().cpu().numpy()
+
+            if att_w.ndim == 2:
+                att_w = att_w[None]
+            elif att_w.ndim == 4:
+                # In multispkr_asr model case, the dimension could be 4.
+                att_w = np.concatenate(
+                    [att_w[i] for i in range(att_w.shape[0])], axis=0
+                )
+            elif att_w.ndim > 4 or att_w.ndim == 1:
+                raise RuntimeError(f"Must be 2, 3 or 4 dimension: {att_w.ndim}")
+
+            w, h = plt.figaspect(1.0 / len(att_w))
+            fig = plt.Figure(figsize=(w * 1.3, h * 1.3))
+            axes = fig.subplots(1, len(att_w))
+            if len(att_w) == 1:
+                axes = [axes]
+
+            for ax, aw in zip(axes, att_w):
+                ax.imshow(aw.astype(np.float32), aspect="auto")
+                ax.set_title(f"{k}_{id_}")
+                ax.set_xlabel("Input")
+                ax.set_ylabel("Output")
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+            if output_dir is not None:
+                p = output_dir / id_ / f"{k}.{reporter.get_epoch()}ep.png"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                fig.savefig(p)
+
 
 
 def main(cmd=None):
@@ -1107,7 +1227,14 @@ def main(cmd=None):
     parser = get_parser()
     args = parser.parse_args(cmd)
     kwargs = vars(args)
+    logging.getLogger().setLevel(logging.INFO)
+    logging.info(f"{kwargs=}")
     kwargs.pop("config", None)
+    # [OSWALD]: TODO FIX hardcode set CTC score to 0 if i_lm_test, z.b. if i_lm_eval_cutoff in kwargs
+    # if True:
+    #     kwargs['ctc_weight']=0.0
+    #     logging.info(f"Using {kwargs['ctc_weight']=} for i_lm_test decoding")
+
     inference(**kwargs)
 
 

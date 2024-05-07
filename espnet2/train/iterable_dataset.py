@@ -172,6 +172,7 @@ class IterableESPnetDataset(IterableDataset):
             while True:
                 keys = []
                 values = []
+                # print(files) -> ()
                 for f in files:
                     linenum += 1
                     try:
@@ -211,6 +212,7 @@ class IterableESPnetDataset(IterableDataset):
                 # 2.b. Load data from non-iterable dataset
                 _, from_non_iterable = self.non_iterable_dataset[uid]
                 data.update(from_non_iterable)
+
 
             # 3. [Option] Apply preprocessing
             #   e.g. espnet2.train.preprocessor:CommonPreprocessor

@@ -1248,10 +1248,12 @@ class AbsTask(ABC):
         torch.backends.cudnn.enabled = args.cudnn_enabled
         torch.backends.cudnn.benchmark = args.cudnn_benchmark
         torch.backends.cudnn.deterministic = args.cudnn_deterministic
+        # Oswald: nope
         if args.detect_anomaly:
             logging.info("Invoking torch.autograd.set_detect_anomaly(True)")
             torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
+        # Oswald: nope
         if (
             args.collect_stats
             and getattr(args, "model_conf", None) is not None
@@ -1401,6 +1403,7 @@ class AbsTask(ABC):
                     mode="train",
                 )
             else:
+                # OSWALD: might need to look into this
                 train_iter_factory = cls.build_iter_factory(
                     args=args,
                     distributed_option=distributed_option,
@@ -2030,12 +2033,15 @@ class AbsTask(ABC):
         else:
             kwargs = {}
 
+
         dataset = IterableESPnetDataset(
             data_path_and_name_and_type,
             float_dtype=dtype,
             preprocess=preprocess_fn,
             key_file=key_file,
         )
+
+        # Hier klappt alles, in dataset ist text_gt drin
         if dataset.apply_utt2category:
             kwargs.update(batch_size=1)
         else:

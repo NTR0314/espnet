@@ -44,7 +44,7 @@ frontend_conf:
     hop_length: 160
 
 seed: 2022
-num_workers: 4
+num_workers: 0
 batch_type: numel
 batch_bins: 16000000
 accum_grad: 4

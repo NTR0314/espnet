@@ -396,6 +396,18 @@ class ASRTask(AbsTask):
             default=[],
             help="Auxillary tasks to train on using CTC loss. ",
         )
+        group.add_argument(
+            "--blocks_inference",
+            type=int,
+            default=0,
+            help="The amount of 10ms blocks to be added during Inference"
+        )
+        group.add_argument(
+            "--blocks_training",
+            type=int,
+            default=0,
+            help="The amount of 10ms blocks to be masked during Training",
+        )
 
         for class_choices in cls.class_choices_list:
             # Append --<name> and --<name>_conf.
@@ -415,6 +427,18 @@ class ASRTask(AbsTask):
     def build_preprocess_fn(
         cls, args: argparse.Namespace, train: bool
     ) -> Optional[Callable[[str, Dict[str, np.array]], Dict[str, np.ndarray]]]:
+
+        #[OSWALD]
+        def get_aux_tasks():
+            start = []
+            if hasattr(args, "aux_ctc_tasks"):
+                start = start + args.aux_ctc_tasks
+            if hasattr(args, "aux_text_gt"):
+                start.append(args.aux_text_gt)
+
+            logging.info(start)
+            return tuple(start)
+
         assert check_argument_types()
         if args.use_preprocessor:
             try:
@@ -425,7 +449,9 @@ class ASRTask(AbsTask):
             except Exception as e:
                 raise e
 
+
             preprocessor_class = preprocessor_choices.get_class(args.preprocessor)
+            # print(f"{preprocessor_class=}") -> # CommonPreprocessor
             retval = preprocessor_class(
                 train=train,
                 token_type=args.token_type,
@@ -454,9 +480,7 @@ class ASRTask(AbsTask):
                 speech_volume_normalize=(
                     args.speech_volume_normalize if hasattr(args, "rir_scp") else None
                 ),
-                aux_task_names=(
-                    args.aux_ctc_tasks if hasattr(args, "aux_ctc_tasks") else None
-                ),
+                aux_task_names=get_aux_tasks(),
                 use_lang_prompt=(
                     args.use_lang_prompt if hasattr(args, "use_lang_prompt") else None
                 ),
@@ -491,6 +515,9 @@ class ASRTask(AbsTask):
         retval = retval + ["prompt"]
         retval = tuple(retval)
 
+        if inference:
+            retval = ("text_gt",)
+
         logging.info(f"Optional Data Names: {retval }")
         assert check_return_type(retval)
         return retval
@@ -522,6 +549,15 @@ class ASRTask(AbsTask):
         vocab_size = len(token_list)
         logging.info(f"Vocabulary size: {vocab_size }")
 
+        # OSWALD: blocks
+        if not hasattr(args, 'blocks_training'):
+            blocks_training = 0
+        else:
+            blocks_training = args.blocks_training
+        if not hasattr(args, 'blocks_inference'):
+            blocks_inference = 0
+        else:
+            blocks_inference = args.blocks_inference
         # 1. frontend
         if args.input_size is None:
             # Extract features in the model
@@ -624,6 +660,8 @@ class ASRTask(AbsTask):
             ctc=ctc,
             joint_network=joint_network,
             token_list=token_list,
+            blocks_training=blocks_training,
+            blocks_inference=blocks_inference,
             **args.model_conf,
         )
 

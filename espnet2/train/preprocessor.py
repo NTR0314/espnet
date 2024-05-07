@@ -424,6 +424,7 @@ class CommonPreprocessor(AbsPreprocessor):
     def _text_process(
         self, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
+        #import pdb;pdb.set_trace()
         if self.text_name in data and self.tokenizer is not None:
             text = data[self.text_name]
             if isinstance(text, np.ndarray):
@@ -479,6 +480,10 @@ class CommonPreprocessor(AbsPreprocessor):
                         dtype=np.int64,
                     )
         if self.aux_task_names is not None and self.tokenizer is not None:
+            # if schleife wird aufgerufen, weil [] is note None == True
+            # print("I dont get called \n\n\n")
+            # logging.info(f"{data=}")
+            # logging.info(f"{self.aux_task_names=}")
             for name in self.aux_task_names:
                 if name in data:
                     text = data[name]
@@ -486,12 +491,19 @@ class CommonPreprocessor(AbsPreprocessor):
                     tokens = self.tokenizer.text2tokens(text)
                     text_ints = self.token_id_converter.tokens2ids(tokens)
                     data[name] = np.array(text_ints, dtype=np.int64)
+                    # logging.info(f"{data=}")
+
+        # TODO this does not get set in inference
+        # print(f'{self.tokenizer}') -> SentencepiecesTokenizer(data/entoken_list/bpe4000...
+        # Daten werden nich sonderlich verarbeitet.
+        # print("\n\n3", data)
         assert check_return_type(data)
         return data
 
     def __call__(
         self, uid: str, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
+        # import pdb;pdb.set_trace()
         assert check_argument_types()
 
         data = self._speech_process(data)

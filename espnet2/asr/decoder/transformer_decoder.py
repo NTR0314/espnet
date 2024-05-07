@@ -186,6 +186,7 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
             y, cache: NN output value and cache per `self.decoders`.
             y.shape` is (batch, maxlen_out, token)
         """
+        # import pdb; pdb.set_trace()
         x = self.embed(tgt)
         if cache is None:
             cache = [None] * len(self.decoders)
@@ -254,7 +255,9 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
 
         """
         # merge states
+        # import pdb; pdb.set_trace()
         n_batch = len(ys)
+        # [OSWALD]: decoders are just all the layers of the decoder
         n_layers = len(self.decoders)
         if states[0] is None:
             batch_state = None

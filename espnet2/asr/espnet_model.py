@@ -6,6 +6,9 @@ import torch
 from packaging.version import parse as V
 from typeguard import check_argument_types
 
+# OSWALD
+import numpy
+
 from espnet2.asr.ctc import CTC
 from espnet2.asr.decoder.abs_decoder import AbsDecoder
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
@@ -68,6 +71,8 @@ class ESPnetASRModel(AbsESPnetModel):
         sym_eos: str = "<sos/eos>",
         extract_feats_in_collect_stats: bool = True,
         lang_token_id: int = -1,
+        blocks_training: int = 0,
+        blocks_inference: int = 0,
     ):
         assert check_argument_types()
         assert 0.0 <= ctc_weight <= 1.0, ctc_weight
@@ -101,6 +106,7 @@ class ESPnetASRModel(AbsESPnetModel):
         self.preencoder = preencoder
         self.postencoder = postencoder
         self.encoder = encoder
+        self.blocks_training = blocks_training
 
         if not hasattr(self.encoder, "interctc_use_conditioning"):
             self.encoder.interctc_use_conditioning = False
@@ -365,7 +371,10 @@ class ESPnetASRModel(AbsESPnetModel):
         return {"feats": feats, "feats_lengths": feats_lengths}
 
     def encode(
-        self, speech: torch.Tensor, speech_lengths: torch.Tensor
+        self,
+        speech: torch.Tensor,
+        speech_lengths: torch.Tensor,
+        blocks_inference: int = 0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Frontend + Encoder. Note that this method is used by asr_inference.py
 
@@ -386,12 +395,40 @@ class ESPnetASRModel(AbsESPnetModel):
                 feats, feats_lengths = self.normalize(feats, feats_lengths)
 
         # Pre-encoder, e.g. used for raw input data
+        # OSWALD: None
         if self.preencoder is not None:
             feats, feats_lengths = self.preencoder(feats, feats_lengths)
+
+        # OSWALD: Letzter SChritt bevor in Encoder reingefeedet wird, d.h. hier audio cutten
+        # blocks_training:= Mean of blocks to be masked during training
+        # blocks_inference:= Fixed amount of blocks to be added during inference.
+        # TODO Yosuke's idea try uniform sampling  instead of gaussian sampling
+        if self.blocks_training != 0 and blocks_inference == 0:
+            mask_sub_val = numpy.abs(numpy.random.normal(loc = 0.0, scale = self.blocks_training, size=feats_lengths.shape))
+            mask_sub_val = torch.tensor(mask_sub_val).int().to(feats_lengths.device)
+            for i in range(feats.shape[0]): # loop over batch
+                # Mask feats to 0.0
+                feats[i, feats_lengths[i] - mask_sub_val[i] : feats_lengths[i], :] = 0.0
+                # Mask bleibt gleich, wegen self attn
+                # x_mask[i, :, feats_length[i] - mask_sub_val[i] : feats_length[i]] = False
+        if blocks_inference != 0:
+            # TODO: irgendwann nicht mehr hardcoded
+            test_set_decoding = True
+            if not test_set_decoding:
+                logging.info(f"[Approach 2]: Adding {blocks_inference} inference blocks. Increase feats_lengths from {feats_lengths} to {feats_lengths + blocks_inference}")
+                logging.debug(f"[Approach 2]: Adding {blocks_inference} inference blocks. Increase feats_lengths from {feats_lengths} to {feats_lengths + blocks_inference}")
+                tgt_shape = list(feats.shape)
+                tgt_shape[1] = blocks_inference
+                feats = torch.cat([feats, torch.zeros(tgt_shape).to(feats.device)], 1)
+                feats_lengths = feats_lengths + blocks_inference
+            else:
+                feats[:, -blocks_inference:, :] = 0.0
+                logging.info(f"[Approach 2]: Zeroing out the last {blocks_inference} blocks. For live inference thecode needs to be adjusted.")
 
         # 4. Forward encoder
         # feats: (Batch, Length, Dim)
         # -> encoder_out: (Batch, Length2, Dim2)
+        # OSWALD nope
         if self.encoder.interctc_use_conditioning or getattr(
             self.encoder, "ctc_trim", False
         ):
@@ -406,6 +443,7 @@ class ESPnetASRModel(AbsESPnetModel):
             encoder_out = encoder_out[0]
 
         # Post-encoder, e.g. NLU
+        # OSWALD: Nope
         if self.postencoder is not None:
             encoder_out, encoder_out_lens = self.postencoder(
                 encoder_out, encoder_out_lens
