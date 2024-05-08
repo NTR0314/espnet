@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from packaging.version import parse as V
-from typeguard import check_argument_types
+from typeguard import typechecked
 
 # OSWALD
 import numpy
@@ -40,6 +40,7 @@ else:
 class ESPnetASRModel(AbsESPnetModel):
     """CTC-attention hybrid Encoder-Decoder model"""
 
+    @typechecked
     def __init__(
         self,
         vocab_size: int,
@@ -53,7 +54,7 @@ class ESPnetASRModel(AbsESPnetModel):
         decoder: Optional[AbsDecoder],
         ctc: CTC,
         joint_network: Optional[torch.nn.Module],
-        aux_ctc: dict = None,
+        aux_ctc: Optional[dict] = None,
         ctc_weight: float = 0.5,
         interctc_weight: float = 0.0,
         ignore_id: int = -1,
@@ -74,7 +75,6 @@ class ESPnetASRModel(AbsESPnetModel):
         blocks_training: int = 0,
         blocks_inference: int = 0,
     ):
-        assert check_argument_types()
         assert 0.0 <= ctc_weight <= 1.0, ctc_weight
         assert 0.0 <= interctc_weight < 1.0, interctc_weight
 
