@@ -186,7 +186,6 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
             y, cache: NN output value and cache per `self.decoders`.
             y.shape` is (batch, maxlen_out, token)
         """
-        # import pdb; pdb.set_trace()
         x = self.embed(tgt)
         if cache is None:
             cache = [None] * len(self.decoders)
@@ -238,6 +237,7 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
         states: List[Any],
         xs: torch.Tensor,
         return_hs: bool = False,
+        utt_key = None,
     ) -> Tuple[torch.Tensor, List[Any]]:
         """Score new token batch.
 
@@ -254,11 +254,15 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
                 and next state list for ys.
 
         """
+        # [OSWALD]: safe utt_keys to class if set
+        if utt_key != None:
+            self.utt_key = utt_key
+
         # merge states
-        # import pdb; pdb.set_trace()
         n_batch = len(ys)
         # [OSWALD]: decoders are just all the layers of the decoder
         n_layers = len(self.decoders)
+        # [OSWALD]: states sind die letztens features von jedem decoder layer
         if states[0] is None:
             batch_state = None
         else:

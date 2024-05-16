@@ -1,4 +1,5 @@
-beam_size: 20
+# wegen attention?
+beam_size: 1
 ctc_weight: 0.3
 lm_weight: 0.0
 maxlenratio: 0.0

@@ -211,7 +211,11 @@ class BatchBeamSearch(BeamSearch):
             elif "decoder" in k and pre_x is not None:
                 scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x, pre_x)
             else:
-                scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x)
+                # [OSWALD]: Glaube das wird aufgerufen
+                if self.utt_key != None:
+                    scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x, utt_key=self.utt_key)
+                else:
+                    raise ValueError("utt_key not provided in batch beam search")
 
         if self.return_hs:
             return hs, scores, states
@@ -245,6 +249,7 @@ class BatchBeamSearch(BeamSearch):
         scores = dict()
         states = dict()
         for k, d in self.part_scorers.items():
+            # kein pre_x kein sequential attention
             if "ctc" in k and pre_x is not None:
                 scores[k], states[k] = d.batch_score_partial(
                     hyp.yseq, ids, hyp.states[k], pre_x
@@ -255,6 +260,7 @@ class BatchBeamSearch(BeamSearch):
                 )
         return scores, states
 
+    # [OSWALD]: Why is part_idx never used?
     def merge_states(self, states: Any, part_states: Any, part_idx: int) -> Any:
         """Merge states for new hypothesis.
 
@@ -312,6 +318,7 @@ class BatchBeamSearch(BeamSearch):
         else:
             scores, states = self.score_full(
                 running_hyps,
+                # [OSWALD]: Copy speech features for each batch, e.g., expanding
                 x.expand(n_batch, *x.shape),
                 pre_x=(
                     pre_x.expand(n_batch, *pre_x.shape) if pre_x is not None else None
@@ -321,20 +328,26 @@ class BatchBeamSearch(BeamSearch):
         for k in self.full_scorers:
             weighted_scores += self.weights[k] * scores[k]
         # partial scoring
+        # [OSWALD]: Yes, pre_beam is being used.
         if self.do_pre_beam:
             pre_beam_scores = (
                 weighted_scores
+                # Ja "full" -> pre_beam_scores =  weighted_scores
                 if self.pre_beam_score_key == "full"
                 else scores[self.pre_beam_score_key]
             )
+            # Indizes von den top 30 (self.pre_beam_size) probabilities
             part_ids = torch.topk(pre_beam_scores, self.pre_beam_size, dim=-1)[1]
         # NOTE(takaaki-hori): Unlike BeamSearch, we assume that score_partial returns
         # full-size score matrices, which has non-zero scores for part_ids and zeros
         # for others.
+        # [OSWALD]: TODO: idk what a CTCPrefixScorer is idk what is being scored here
+
         part_scores, part_states = self.score_partial(running_hyps, part_ids, x, pre_x)
         for k in self.part_scorers:
             weighted_scores += self.weights[k] * part_scores[k]
         # add previous hyp scores
+        # [OSWALD]: TODO: can we + here because it's log probs? Running hyp prob auf jedes vok token von weighted scores addieren
         weighted_scores += running_hyps.score.to(
             dtype=x.dtype, device=x.device
         ).unsqueeze(1)
@@ -349,7 +362,7 @@ class BatchBeamSearch(BeamSearch):
             full_new_token_id,
             part_prev_hyp_id,
             part_new_token_id,
-        ) in zip(*self.batch_beam(weighted_scores, part_ids)):
+        ) in zip(*self.batch_beam(weighted_scores, part_ids)): # [OSWALD]: Just torch.topk
             prev_hyp = prev_hyps[full_prev_hyp_id]
             if self.return_hs:
                 new_hs = prev_hyp.hs + [hs[full_prev_hyp_id].squeeze(0)]
@@ -357,8 +370,7 @@ class BatchBeamSearch(BeamSearch):
                 new_hs = []
             best_hyps.append(
                 Hypothesis(
-                    score=weighted_scores[full_prev_hyp_id, full_new_token_id],
-                    yseq=self.append_token(prev_hyp.yseq, full_new_token_id),
+                    score=weighted_scores[full_prev_hyp_id, full_new_token_id], yseq=self.append_token(prev_hyp.yseq, full_new_token_id),
                     scores=self.merge_scores(
                         prev_hyp.scores,
                         {k: v[full_prev_hyp_id] for k, v in scores.items()},
@@ -366,6 +378,7 @@ class BatchBeamSearch(BeamSearch):
                         {k: v[part_prev_hyp_id] for k, v in part_scores.items()},
                         part_new_token_id,
                     ),
+                    # [OSWALD]: merge_states literally just merges part_states and states
                     states=self.merge_states(
                         {
                             k: self.full_scorers[k].select_state(v, full_prev_hyp_id)
@@ -446,6 +459,7 @@ class BatchBeamSearch(BeamSearch):
         for b in torch.nonzero(is_eos, as_tuple=False).view(-1):
             hyp = self._select(running_hyps, b)
             if i >= minlen:
+                # logger.info(f"[OSWALD]: Hypothesis ended: {hyp}")
                 ended_hyps.append(hyp)
         remained_ids = torch.nonzero(is_eos == 0, as_tuple=False).view(-1).cpu()
         return self._batch_select(running_hyps, remained_ids)

@@ -9,9 +9,8 @@ train_set="train_clean_100"
 valid_set="dev"
 test_sets="test_clean test_other dev_clean dev_other"
 
-# This asr_config is only for training, can stay the same for different decoding
 asr_config=conf/tuning/train_asr_conformer_lr2e-3_warmup15k_amp_nondeterministic.yaml
-inference_config=conf/decode_asr_6.yaml
+inference_config=conf/decode_asr_normal_attn_verlgeich.yaml
 
 ./asr.sh \
     --lang en \

@@ -1,7 +1,7 @@
-beam_size: 20
+# beam 1 wegen attn ding
+beam_size: 1
 ctc_weight: 0.3
 lm_weight: 0.0
 maxlenratio: 0.0
 minlenratio: 0.0
 penalty: 0.0
-i_lm_eval_cutoff: 6

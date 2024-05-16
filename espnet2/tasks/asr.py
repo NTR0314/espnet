@@ -440,7 +440,6 @@ class ASRTask(AbsTask):
             logging.info(start)
             return tuple(start)
 
-        assert check_argument_types()
         if args.use_preprocessor:
             try:
                 _ = getattr(args, "preprocessor")

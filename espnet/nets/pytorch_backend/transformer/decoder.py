@@ -299,7 +299,7 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
 
     # batch beam search API (see BatchScorerInterface)
     def batch_score(
-        self, ys: torch.Tensor, states: List[Any], xs: torch.Tensor
+        self, ys: torch.Tensor, states: List[Any], xs: torch.Tensor, utt_key=None
     ) -> Tuple[torch.Tensor, List[Any]]:
         """Score new token batch (required).
 
@@ -315,6 +315,11 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
                 and next state list for ys.
 
         """
+        # [OSWALD]: safe utt_key if set
+        if utt_key != None:
+            self.utt_key = utt_key
+        else:
+            raise ValueError("utt_key not set in decoder")
         # merge states
         n_batch = len(ys)
         n_layers = len(self.decoders)

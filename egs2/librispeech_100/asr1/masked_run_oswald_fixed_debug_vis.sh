@@ -7,7 +7,7 @@ set -o pipefail
 
 train_set="train_clean_100"
 valid_set="dev"
-test_sets="test_clean test_other dev_clean dev_other"
+test_sets="test_clean"
 
 asr_config=conf/tuning/train_asr_conformer_lr2e-3_warmup15k_amp_nondeterministic_masked_training_fixed.yaml
 inference_config=conf/decode_asr_approach2_debug.yaml

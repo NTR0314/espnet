@@ -45,6 +45,10 @@ from espnet.nets.scorers.ctc import CTCPrefixScorer
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.utils.cli_utils import get_commandline_args
 
+# [OSWALD]:
+from espnet2.main_funcs import calculate_all_attentions
+
+
 try:
     from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM
     from transformers.file_utils import ModelOutput
@@ -467,9 +471,8 @@ class Speech2Text:
         self.multi_asr = multi_asr
 
     @torch.no_grad()
-    #[OSWALD]: 
     @typechecked
-    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0) -> Union[
+    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0, utt_key=None) -> Union[
         ListOfHypothesis,
         List[ListOfHypothesis],
         Tuple[
@@ -542,10 +545,9 @@ class Speech2Text:
             if test_i_lm:
                 logging.info(f"USING cutoff for i_lm testing: {i_lm_eval_cutoff=}")
                 text_gt_cut = text_gt[:-i_lm_eval_cutoff]
-                logging.getLogger().setLevel(logging.INFO)
                 results = self._decode_single_sample(enc[0], text_gt=text_gt_cut)
             else:
-                results = self._decode_single_sample(enc[0])
+                results = self._decode_single_sample(enc[0], utt_key=utt_key)
 
             # Encoder intermediate CTC predictions
             if intermediate_outs is not None:
@@ -573,7 +575,7 @@ class Speech2Text:
         return res
 
     @typechecked
-    def _decode_single_sample(self, enc: torch.Tensor, text_gt=None):
+    def _decode_single_sample(self, enc: torch.Tensor, text_gt=None, utt_key=None):
         if self.beam_search_transducer: # no
             logging.info("encoder output length: " + str(enc.shape[0]))
             nbest_hyps = self.beam_search_transducer(enc)
@@ -639,8 +641,12 @@ class Speech2Text:
                         if hasattr(module, "setup_step"):
                             module.setup_step()
             nbest_hyps = self.beam_search(
-                x=enc, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio,
-                text_gt=text_gt
+                x=enc,
+                maxlenratio=self.maxlenratio,
+                minlenratio=self.minlenratio,
+                text_gt=text_gt,
+                utt_key=utt_key,
+                save_path=self.save_path,
             )
 
         nbest_hyps = nbest_hyps[: self.nbest]
@@ -838,20 +844,25 @@ def inference(
     # FIXME(kamo): The output format should be discussed about
     with DatadirWriter(output_dir) as writer:
         # Hier wird ueber den Datensatz iteriert.
+        # keys: ['1089-134686-0000']
+        # batch: dict: {'speech': ..., 'speech_lengths': ....., 'text_gt': ..., 'text_gt_lengths': ....}
         for keys, batch in loader:
             assert isinstance(batch, dict), type(batch)
             assert all(isinstance(s, str) for s in keys), keys
             _bs = len(next(iter(batch.values())))
             assert len(keys) == _bs, f"{len(keys)} != {_bs}"
             batch = {k: v[0] for k, v in batch.items() if not k.endswith("_lengths")}
-            # logging.info(f"{batch=}") 
+
+            logging.info(f"Currently decoding utterance_key: {keys[0]}")
+            # Oswald: apparently not good practice
+            # logging.handlers[0].flush()
 
             # N-best list of (text, token, token_int, hyp_object)
             try:
                 test_i_lm = True if i_lm_eval_cutoff != 0 else False
-                plot_att = True
-                if not plot_att:
-                    results = speech2text(**batch, test_i_lm=test_i_lm, i_lm_eval_cutoff=i_lm_eval_cutoff, blocks_inference=blocks_inference)
+                save_path = Path(output_dir).parent.parent
+                speech2text.save_path = save_path
+                results = speech2text(**batch, test_i_lm=test_i_lm, i_lm_eval_cutoff=i_lm_eval_cutoff, blocks_inference=blocks_inference, utt_key=keys[0])
             except TooShortUttError as e:
                 logging.warning(f"Utterance {keys} {e}")
                 hyp = Hypothesis(score=0.0, scores={}, states={}, yseq=[])
@@ -1160,66 +1171,6 @@ def get_parser():
     )
     return parser
 
-@torch.no_grad()
-def plot_attention(
-    model: torch.nn.Module,
-    output_dir: Optional[Path],
-    batch
-) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import MaxNLocator
-
-    model.eval()
-    assert isinstance(batch, dict), type(batch)
-
-    batch = to_device("cuda")
-    if no_forward_run:
-        continue
-
-    # 1. Forwarding model and gathering all attentions
-    #    calculate_all_attentions() uses single gpu only.
-    att_dict = calculate_all_attentions(model, batch)
-
-    # 2. Plot attentions: This part is slow due to matplotlib
-    for k, att_list in att_dict.items():
-        assert len(att_list) == len(ids), (len(att_list), len(ids))
-        for id_, att_w in zip(ids, att_list):
-            if isinstance(att_w, torch.Tensor):
-                att_w = att_w.detach().cpu().numpy()
-
-            if att_w.ndim == 2:
-                att_w = att_w[None]
-            elif att_w.ndim == 4:
-                # In multispkr_asr model case, the dimension could be 4.
-                att_w = np.concatenate(
-                    [att_w[i] for i in range(att_w.shape[0])], axis=0
-                )
-            elif att_w.ndim > 4 or att_w.ndim == 1:
-                raise RuntimeError(f"Must be 2, 3 or 4 dimension: {att_w.ndim}")
-
-            w, h = plt.figaspect(1.0 / len(att_w))
-            fig = plt.Figure(figsize=(w * 1.3, h * 1.3))
-            axes = fig.subplots(1, len(att_w))
-            if len(att_w) == 1:
-                axes = [axes]
-
-            for ax, aw in zip(axes, att_w):
-                ax.imshow(aw.astype(np.float32), aspect="auto")
-                ax.set_title(f"{k}_{id_}")
-                ax.set_xlabel("Input")
-                ax.set_ylabel("Output")
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-
-            if output_dir is not None:
-                p = output_dir / id_ / f"{k}.{reporter.get_epoch()}ep.png"
-                p.parent.mkdir(parents=True, exist_ok=True)
-                fig.savefig(p)
-
-
 
 def main(cmd=None):
     print(get_commandline_args(), file=sys.stderr)
@@ -1227,12 +1178,14 @@ def main(cmd=None):
     args = parser.parse_args(cmd)
     kwargs = vars(args)
     logging.getLogger().setLevel(logging.INFO)
-    logging.info(f"{kwargs=}")
+    # logging.info(f"{kwargs=}")
     kwargs.pop("config", None)
     # [OSWALD]: TODO FIX hardcode set CTC score to 0 if i_lm_test, z.b. if i_lm_eval_cutoff in kwargs
     # if True:
     #     kwargs['ctc_weight']=0.0
     #     logging.info(f"Using {kwargs['ctc_weight']=} for i_lm_test decoding")
+
+    # [OSWALD]: Idk how to get the acrual save path (exp/
 
     inference(**kwargs)
 

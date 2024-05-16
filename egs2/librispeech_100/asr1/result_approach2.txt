@@ -1,9 +1,0 @@
-## exp/asr_train_asr_conformer_lr2e-3_warmup15k_amp_nondeterministic_masked_training_fixed_raw_en_bpe5000_sp
-### WER
-
-|dataset|Snt|Wrd|Corr|Sub|Del|Ins|Err|S.Err|
-|---|---|---|---|---|---|---|---|---|
-|decode_asr_approach2_asr_model_valid.acc.ave/dev_clean|2703|54402|0.0|0.0|100.0|0.0|100.0|100.0|
-|decode_asr_approach2_asr_model_valid.acc.ave/dev_other|2864|50948|0.0|0.0|100.0|0.0|100.0|100.0|
-|decode_asr_approach2_asr_model_valid.acc.ave/test_clean|2620|52576|60.3|34.2|5.5|11.6|51.3|100.0|
-|decode_asr_approach2_asr_model_valid.acc.ave/test_other|2939|52343|0.0|0.0|100.0|0.0|100.0|100.0|

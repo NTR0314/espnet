@@ -74,6 +74,8 @@ class MultiHeadedAttention(nn.Module):
 
         """
         n_batch = value.size(0)
+        # if scores.shape[2] >= 2:
+            # import pdb; pdb.set_trace()
         if mask is not None:
             mask = mask.unsqueeze(1).eq(0)  # (batch, 1, *, time2)
             min_value = torch.finfo(scores.dtype).min

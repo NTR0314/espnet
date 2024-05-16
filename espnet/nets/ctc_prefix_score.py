@@ -100,6 +100,7 @@ class CTCPrefixScoreTH(object):
                 (n_bh, self.odim), -1, dtype=torch.long, device=self.device
             )
             snum = self.scoring_num
+            # [OSWALD]: batchsize 1 nope
             if self.idx_bh is None or n_bh > len(self.idx_bh):
                 self.idx_bh = torch.arange(n_bh, device=self.device).view(-1, 1)
             scoring_idmap[self.idx_bh[:n_bh], scoring_ids] = torch.arange(
@@ -108,6 +109,7 @@ class CTCPrefixScoreTH(object):
             scoring_idx = (
                 scoring_ids + self.idx_bo.repeat(1, n_hyps).view(-1, 1)
             ).view(-1)
+            # [OSWALD]: get only scoring_idx of x (e.g. topk of decoder)
             x_ = torch.index_select(
                 self.x.view(2, -1, self.batch * self.odim), 2, scoring_idx
             ).view(2, -1, n_bh, snum)
