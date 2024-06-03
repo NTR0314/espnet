@@ -15,6 +15,10 @@ dir=data/local/dict_nosp
 mkdir -p $dir
 srcdict=$srcdir/swb_ms98_transcriptions/sw-ms98-dict.text
 
+# [OSWALD]:
+echo OSWALD: $srcdict
+echo OSWALD: $dir
+
 # assume swbd_p1_data_prep.sh was done already.
 [ ! -f "$srcdict" ] && echo "$0: No such file $srcdict" && exit 1;
 

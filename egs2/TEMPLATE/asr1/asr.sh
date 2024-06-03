@@ -41,7 +41,7 @@ skip_upload_hf=true  # Skip uploading to hugging face stages.
 eval_valid_set=false # Run decoding for the validation set
 ngpu=1               # The number of gpus ("0" uses cpu, otherwise use gpu).
 num_nodes=1          # The number of nodes.
-nj=32                # The number of parallel jobs.
+nj=6                # The number of parallel jobs.
 inference_nj=32      # The number of parallel jobs in decoding.
 gpu_inference=false  # Whether to perform gpu decoding.
 dumpdir=dump         # Directory to dump features.
@@ -1597,7 +1597,6 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         # [OSWALD]: set gpu
         echo "Exporting CUDA_VISIBLE_DEVICES to ${gpu_id}"
         export CUDA_VISIBLE_DEVICES=${gpu_id}
-        # echo $CUDA_VISIBLE_DEVICES 
 
         # shellcheck disable=SC2046,SC2086
         ${_cmd} --gpu "${_ngpu}" JOB=1:"${_nj}" "${_logdir}"/asr_inference.JOB.log \

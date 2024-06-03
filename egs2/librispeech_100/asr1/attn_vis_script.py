@@ -20,57 +20,52 @@ def plot(attn_data, title, save_path):
     plt.clf()
     plt.close(fig)
 
-attn_dir = Path(os.getcwd()) / 'attn_vis'
-for utt_folder in os.listdir(attn_dir):
-    att_dumps = {}
-    filenames = os.listdir(attn_dir / utt_folder)
-    filenames.sort()
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('attn_dir', help="attn_dir")
+args = parser.parse_args()
+attn_dir = Path(args.attn_dir)
+
+att_dumps = {}
+filenames = os.listdir(attn_dir)
+filenames.sort()
+for filename in filenames:
+    # ignore non numpy files
+    if not ".npy" in filename:
+        continue
+    full_path = attn_dir / filename
+    att_w = numpy.load(full_path)
+
+    # some shit from initial script
+    if att_w.ndim == 2:
+        att_w = att_w[None]
+    elif att_w.ndim == 4:
+    # In multispkr_asr model case, the dimension could be 4.
+        att_w = numpy.concatenate([att_w[i] for i in range(att_w.shape[0])], axis=0)
+    elif att_w.ndim > 4 or att_w.ndim == 1:
+        raise RuntimeError(f"Must be 2, 3 or 4 dimension: {att_w.ndim}")
+
+    # Get utt-id
+    import re
+    utt_id = re.search("(utt_\d+-\d+-\d+)_step_\d+.npy", filename).groups()[0]
+    if str(utt_id) not in att_dumps:
+        att_dumps[str(utt_id)] = att_w
+    else:
+        raise Error("Duplicate utt_id")
+
+for utt_id, att_w in att_dumps.items():
+    # remove 1 dimensional decoder size
     # import pdb; pdb.set_trace()
-    for filename in filenames:
-        if ".png" in filename:
-            continue
-        full_path = attn_dir / utt_folder / filename
-        att_w = numpy.load(full_path)
-        if att_w.ndim == 2:
-            att_w = att_w[None]
-        elif att_w.ndim == 4:
-        # In multispkr_asr model case, the dimension could be 4.
-            att_w = numpy.concatenate([att_w[i] for i in range(att_w.shape[0])], axis=0)
-        elif att_w.ndim > 4 or att_w.ndim == 1:
-            raise RuntimeError(f"Must be 2, 3 or 4 dimension: {att_w.ndim}")
-        # Get layer
-        import re
-        layer = re.search("\d\d(\d).npy", filename).groups()[0]
-        if str(layer) not in att_dumps:
-            att_dumps[str(layer)] = [att_w]
-        else:
-            att_dumps[str(layer)].append(att_w)
+    # att_w = numpy.squeeze(att_w)
+    concated_avg_head = numpy.average(att_w, axis=0)
 
-    for layer_str, att_list in att_dumps.items():
-        from functools import reduce
-        # import pdb; pdb.set_trace()
-        concated = reduce(lambda x, y: numpy.concatenate((x, y), axis=1), att_list)
-        # (DECsize, ENCsize)
-        concated_avg_head = numpy.average(concated, axis=0)
-        print(f"{concated_avg_head.shape=}")
-        # ENC x DEC
-        concated_avg_head = numpy.swapaxes(concated_avg_head, 0, 1)
-        print(f"{concated_avg_head.shape=}")
-        filename = f"layer_{layer_str}_avg_head_concat.png"
-        title_str = f"layer {layer_str} averaged over heads"
-        save_path = attn_dir / utt_folder / filename
-        # Plot each layer averaged over heads
-        plot(concated_avg_head, title_str, save_path)
-
-        # For each layer plot each head.
-        for head, head_data in enumerate(concated):
-            filename = f"layer_{layer_str}_head_{head}.png"
-            # import pdb; pdb.set_trace()
-            title_str = f"layer {layer_str} head {head}.png"
-            save_path = attn_dir / utt_folder / filename
-            print(f"Plotting file: {save_path}")
-            head_data = numpy.swapaxes(head_data, 0, 1)
-            plot(head_data, title_str, save_path)
-
-
+    print(f"{concated_avg_head.shape=}")
+    # ENC x DEC
+    concated_avg_head = numpy.swapaxes(concated_avg_head, 0, 1)
+    print(f"{concated_avg_head.shape=}")
+    filename = f"{utt_id}_attn_vis.png"
+    title_str = f"Last layer: {utt_id} avg heads"
+    save_path = attn_dir / filename
+    # Plot each layer averaged over heads
+    plot(concated_avg_head, title_str, save_path)
 

@@ -138,6 +138,9 @@ class EncoderLayer(nn.Module):
         if pos_emb is not None:
             x_att = self.self_attn(x_q, x, x, pos_emb, mask)
         else:
+            # logging.info(f"{mask.shape=}")
+            # logging.info(f"{x.shape=}")
+            # logging.info(f"{x_q.shape=}")
             x_att = self.self_attn(x_q, x, x, mask)
 
         if self.concat_after:

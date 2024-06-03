@@ -6,10 +6,14 @@ import re
 
 parser = argparse.ArgumentParser()
 parser.add_argument('attn_path1', help="")
-parser.add_argument('attn_path2', help="")
+parser.add_argument('attn_path2', help=" should be the unmasked model in the comparison")
+parser.add_argument('out_file_name', help="output_file name")
+parser.add_argument('boundaries', default=-1, type=int, help="-1 = default = no boundaries")
 args = parser.parse_args()
 attn_dir1 = Path(args.attn_path1)
 attn_dir2 = Path(args.attn_path2)
+file_name = args.out_file_name
+bounds=args.boundaries
 
 diffs = []
 diffs_non_abs = []
@@ -35,6 +39,11 @@ print(f"{np.min(diffs)}")
 # plot distributioon
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
-ax.hist(diffs_non_abs, bins=200)
+if bounds != -1:
+    ax.hist(diffs_non_abs, bins=200, range=(-bounds, bounds))
+else:
+    ax.hist(diffs_non_abs, bins=200)
+plt.xlabel("Timing offset in ms. Positive: masked model predicts less than full context model.")
+plt.ylabel("Histogram count")
 ax.grid()
-fig.savefig("timing_diffs.png")
+fig.savefig(f"{file_name}")

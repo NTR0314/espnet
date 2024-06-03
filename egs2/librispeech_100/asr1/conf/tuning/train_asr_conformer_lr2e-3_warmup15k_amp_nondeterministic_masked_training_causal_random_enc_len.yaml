@@ -45,9 +45,9 @@ sort_in_batch: descending       # how to sort data in making batch
 sort_batch: descending          # how to sort created batches
 batch_type: numel
 # TITAN X crashes with 16 000 000 numel -> Try 12 000 000
-batch_bins: 8000000
+batch_bins: 4000000
 # Should be changed equivalently to batch bins changes
-accum_grad: 8
+accum_grad: 16
 max_epoch: 70
 patience: none
 init: none
@@ -86,6 +86,8 @@ specaug_conf:
     num_time_mask: 5
 
 # OSWALD Training approach 2
-blocks_training: 300
-random_blocks: 300
+# Masking out blocks_training amount of encoder blocks (mean)
+blocks_training: 200
+# Adding random amount of  empty random_blocks to encoder (mean)
+random_blocks: 200
 is_causal: true

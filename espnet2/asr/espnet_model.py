@@ -74,6 +74,9 @@ class ESPnetASRModel(AbsESPnetModel):
         lang_token_id: int = -1,
         blocks_training: int = 0,
         blocks_inference: int = 0,
+        random_blocks: int = 0,
+        uniform_sampling: bool = False,
+        is_self_distilling: bool = False,
     ):
         assert 0.0 <= ctc_weight <= 1.0, ctc_weight
         assert 0.0 <= interctc_weight < 1.0, interctc_weight
@@ -107,6 +110,12 @@ class ESPnetASRModel(AbsESPnetModel):
         self.postencoder = postencoder
         self.encoder = encoder
         self.blocks_training = blocks_training
+        logging.info(f"{self.blocks_training}")
+        self.random_blocks = random_blocks
+        logging.info(f"{self.random_blocks}")
+        self.uniform_sampling=uniform_sampling
+        self.is_self_distilling = is_self_distilling
+        logging.info(f"[Approach 2]: {self.is_self_distilling}")
 
         if not hasattr(self.encoder, "interctc_use_conditioning"):
             self.encoder.interctc_use_conditioning = False
@@ -241,6 +250,8 @@ class ESPnetASRModel(AbsESPnetModel):
 
         # 1. Encoder
         encoder_out, encoder_out_lens = self.encode(speech, speech_lengths)
+        # logging.info(f"{encoder_out.shape=}")
+        # logging.info(f"{encoder_out_lens.shape=}")
         intermediate_outs = None
         if isinstance(encoder_out, tuple):
             intermediate_outs = encoder_out[1]
@@ -338,6 +349,13 @@ class ESPnetASRModel(AbsESPnetModel):
                     encoder_out, encoder_out_lens, text, text_lengths
                 )
 
+            # OSWALD TODO: I think i need to save cross_attention here and then use it for knowledge distillation 
+            # And define my own loss and calculate it in a seperate function
+            if self.is_self_distilling:
+                import pdb; pdb.set_trace()
+                logging.info("[Approach 2]: TODO")
+                # Do forward pass without masking
+
             # 3. CTC-Att loss definition
             if self.ctc_weight == 0.0:
                 loss = loss_att
@@ -375,6 +393,7 @@ class ESPnetASRModel(AbsESPnetModel):
         speech: torch.Tensor,
         speech_lengths: torch.Tensor,
         blocks_inference: int = 0,
+        blocks_training: int = 0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Frontend + Encoder. Note that this method is used by asr_inference.py
 
@@ -382,6 +401,7 @@ class ESPnetASRModel(AbsESPnetModel):
             speech: (Batch, Length, ...)
             speech_lengths: (Batch, )
         """
+        # logging.info(f"{blocks_inference=}")
         with autocast(False):
             # 1. Extract feats
             feats, feats_lengths = self._extract_feats(speech, speech_lengths)
@@ -396,34 +416,74 @@ class ESPnetASRModel(AbsESPnetModel):
 
         # Pre-encoder, e.g. used for raw input data
         # OSWALD: None
+        debug_logging=False
+
         if self.preencoder is not None:
             feats, feats_lengths = self.preencoder(feats, feats_lengths)
 
-        # OSWALD: Letzter SChritt bevor in Encoder reingefeedet wird, d.h. hier audio cutten
+        # OSWALD: Modify input data here.
         # blocks_training:= Mean of blocks to be masked during training
         # blocks_inference:= Fixed amount of blocks to be added during inference.
-        # TODO Yosuke's idea try uniform sampling  instead of gaussian sampling
         if self.blocks_training != 0 and blocks_inference == 0:
-            mask_sub_val = numpy.abs(numpy.random.normal(loc = 0.0, scale = self.blocks_training, size=feats_lengths.shape))
+            if not self.uniform_sampling:
+                mask_sub_val = numpy.abs(numpy.random.normal(loc = 0.0, scale = self.blocks_training, size=feats_lengths.shape))
+            else:
+                np_rng = numpy.random.default_rng()
+                mask_sub_val = np_rng.uniform(0, self.blocks_training, size=feats_lengths.shape)
             mask_sub_val = torch.tensor(mask_sub_val).int().to(feats_lengths.device)
+
             for i in range(feats.shape[0]): # loop over batch
                 # Mask feats to 0.0
                 feats[i, feats_lengths[i] - mask_sub_val[i] : feats_lengths[i], :] = 0.0
                 # Mask bleibt gleich, wegen self attn
                 # x_mask[i, :, feats_length[i] - mask_sub_val[i] : feats_length[i]] = False
         if blocks_inference != 0:
-            # TODO: irgendwann nicht mehr hardcoded
             test_set_decoding = True
             if not test_set_decoding:
-                logging.info(f"[Approach 2]: Adding {blocks_inference} inference blocks. Increase feats_lengths from {feats_lengths} to {feats_lengths + blocks_inference}")
-                logging.debug(f"[Approach 2]: Adding {blocks_inference} inference blocks. Increase feats_lengths from {feats_lengths} to {feats_lengths + blocks_inference}")
+                if debug_logging:
+                    logging.info(f"[Approach 2]: Adding {blocks_inference} inference blocks. This mode intended for live mode with full audio. Increase feats_lengths from {feats_lengths} to {feats_lengths + blocks_inference}")
                 tgt_shape = list(feats.shape)
                 tgt_shape[1] = blocks_inference
                 feats = torch.cat([feats, torch.zeros(tgt_shape).to(feats.device)], 1)
                 feats_lengths = feats_lengths + blocks_inference
             else:
                 feats[:, -blocks_inference:, :] = 0.0
-                logging.info(f"[Approach 2]: Zeroing out the last {blocks_inference} blocks. For live inference thecode needs to be adjusted.")
+                if debug_logging:
+                    logging.info(f"[Approach 2]: Zeroing out the last {blocks_inference} blocks. For live inference thecode needs to be adjusted.")
+        #TODO Oswald
+        if self.random_blocks != 0 and blocks_inference == 0:
+            if debug_logging:
+                logging.info(f"[Approach 2]: Using {self.random_blocks} random_blocks. Adding random amount of pos. encoding blocks with mean {self.random_blocks}. This message should not appear during inference.")
+
+            if not self.uniform_sampling:
+                random_block_val = numpy.random.normal(loc = 0.0, scale = self.random_blocks, size=feats_lengths.shape)
+            else:
+                np_rng = numpy.random.default_rng()
+                random_block_val = np_rng.uniform(0, self.random_blocks, size=feats_lengths.shape)
+            random_block_val = torch.tensor(random_block_val).int().to(feats_lengths.device)
+
+
+            # logging.info(f"[Approach 2]: random_blocks: {random_block_val=}")
+            # Used for new padding
+            cur_len = feats.shape[1]
+            max_new_len = (random_block_val + feats_lengths).max()
+            pad_needed = max(0, max_new_len - cur_len)
+
+            tgt_shape = list(feats.shape)
+            tgt_shape[1] = pad_needed
+
+            if debug_logging:
+                logging.info(f"[Approach 2]:before: {feats.shape=}")
+                logging.info(f"[Approach 2]:before: {feats_lengths}")
+
+            feats = torch.cat([feats, torch.zeros(tgt_shape).to(feats.device)], 1)
+            feats_lengths = feats_lengths + random_block_val.type(feats_lengths.dtype)
+            # Might cause negative lengths
+            feats_lengths = torch.clamp(feats_lengths, min=0)
+            if debug_logging:
+                logging.info(f"[Approach 2]:after: {feats.shape=}")
+                logging.info(f"[Approach 2]:after: {feats_lengths}")
+
 
         # 4. Forward encoder
         # feats: (Batch, Length, Dim)
@@ -456,6 +516,7 @@ class ESPnetASRModel(AbsESPnetModel):
         if (
             getattr(self.encoder, "selfattention_layer_type", None) != "lf_selfattn"
             and not self.is_encoder_whisper
+            and not self.random_blocks != 0
         ):
             assert encoder_out.size(-2) <= encoder_out_lens.max(), (
                 encoder_out.size(),

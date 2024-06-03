@@ -29,6 +29,7 @@ from espnet.nets.pytorch_backend.transformer.embedding import (
     RelPositionalEncoding,
     ScaledPositionalEncoding,
 )
+from espnet.nets.pytorch_backend.transformer.mask import subsequent_mask
 from espnet.nets.pytorch_backend.transformer.layer_norm import LayerNorm
 from espnet.nets.pytorch_backend.transformer.multi_layer_conv import (
     Conv1dLinear,
@@ -115,9 +116,12 @@ class ConformerEncoder(AbsEncoder):
         stochastic_depth_rate: Union[float, List[float]] = 0.0,
         layer_drop_rate: float = 0.0,
         max_pos_emb_len: int = 5000,
+        is_causal: bool = False,
+        is_self_distilling: bool = False,
     ):
         super().__init__()
         self._output_size = output_size
+        self.is_causal = is_causal
 
         if rel_pos_type == "legacy":
             if pos_enc_layer_type == "rel_pos":
@@ -265,7 +269,7 @@ class ConformerEncoder(AbsEncoder):
             raise ValueError("unknown encoder_attn_layer: " + selfattention_layer_type)
 
         convolution_layer = ConvolutionModule
-        convolution_layer_args = (output_size, cnn_module_kernel, activation)
+        convolution_layer_args = (output_size, cnn_module_kernel, activation, is_causal)
 
         if isinstance(stochastic_depth_rate, float):
             stochastic_depth_rate = [stochastic_depth_rate] * num_blocks
@@ -310,6 +314,7 @@ class ConformerEncoder(AbsEncoder):
         ilens: torch.Tensor,
         prev_states: torch.Tensor = None,
         ctc: CTC = None,
+        masks: torch.Tensor = None,
         return_all_hs: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Calculate forward propagation.
@@ -327,7 +332,13 @@ class ConformerEncoder(AbsEncoder):
             torch.Tensor: Not to be used now.
 
         """
-        masks = (~make_pad_mask(ilens)[:, None, :]).to(xs_pad.device)
+        if masks is None:
+            # [OSWALD]: Don't use ilens, bcs it could be that all random_blocks are negative and then all ilens are shorter than the actual feature x_pad
+            # -----> maxlen=....
+            masks = (~make_pad_mask(ilens, maxlen=xs_pad.shape[1])[:, None, :]).to(xs_pad.device)
+            # logging.info(f"[Approach 2]: {xs_pad.shape=}")
+            # logging.info(f"[Approach 2]: {masks.shape=}")
+            # logging.info(f"[Approach 2]: {ilens=}")
 
         if (
             isinstance(self.embed, Conv2dSubsampling)
@@ -347,6 +358,20 @@ class ConformerEncoder(AbsEncoder):
             xs_pad, masks = self.embed(xs_pad, masks)
         else:
             xs_pad = self.embed(xs_pad)
+
+        if self.is_causal:
+            # DEBUG
+            original_masks = masks
+            original_xs_pad = xs_pad
+
+            olens = masks.squeeze(1).sum(1)
+            m = subsequent_mask(masks.size(-1), device=masks.device).unsqueeze(0)
+            masks_tmp = masks & m
+
+            pad_max = masks.size(-1)
+            pad_masks = masks.transpose(1, 2).repeat(1, 1, pad_max)
+
+            masks = masks_tmp & pad_masks
 
         intermediate_outs = []
         if len(self.interctc_layer_idx) == 0:
@@ -399,7 +424,8 @@ class ConformerEncoder(AbsEncoder):
         if self.normalize_before:
             xs_pad = self.after_norm(xs_pad)
 
-        olens = masks.squeeze(1).sum(1)
+        if not self.is_causal:
+            olens = masks.squeeze(1).sum(1)
         if len(intermediate_outs) > 0:
             return (xs_pad, intermediate_outs), olens, None
         return xs_pad, olens, None

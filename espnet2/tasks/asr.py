@@ -403,11 +403,36 @@ class ASRTask(AbsTask):
             help="The amount of 10ms blocks to be added during Inference"
         )
         group.add_argument(
+            "--random_blocks",
+            type=int,
+            default=0,
+            help="The amount of 10ms blocks to be added/substracted to vary the length of the input audio",
+        )
+        group.add_argument(
+            "--is_causal",
+            type=bool,
+            default=False,
+            help="If encoder is causal or not",
+        )
+        group.add_argument(
+            "--uniform_sampling",
+            type=bool,
+            default=False,
+            help="If the sampling for the amount of blocks should stem from an uniform distribution",
+        )
+        group.add_argument(
+            "--is_self_distilling",
+            type=bool,
+            default=False,
+            help="If the model uses self-distillation for cross attention. Specifically, this is used in the masked training fashion. Here, if set we use the output ofr the unmasked forward pass to calculate the cross attention. These values are then cached and then used as reference (self distillation?) for the masked model. We (plan to) use a KL Div loss.",
+        )
+        group.add_argument(
             "--blocks_training",
             type=int,
             default=0,
             help="The amount of 10ms blocks to be masked during Training",
         )
+
 
         for class_choices in cls.class_choices_list:
             # Append --<name> and --<name>_conf.
@@ -552,10 +577,23 @@ class ASRTask(AbsTask):
             blocks_training = 0
         else:
             blocks_training = args.blocks_training
+
+        if getattr(args, "is_self_distilling", None) is not None:
+            is_self_distilling = args.is_self_distilling
+
+        if getattr(args, "uniform_sampling", None) is not None:
+            uniform_sampling = args.uniform_sampling
+
         if not hasattr(args, 'blocks_inference'):
             blocks_inference = 0
         else:
             blocks_inference = args.blocks_inference
+
+        if not hasattr(args, 'random_blocks'):
+            random_blocks = 0
+        else:
+            random_blocks = args.random_blocks
+
         # 1. frontend
         if args.input_size is None:
             # Extract features in the model
@@ -592,9 +630,14 @@ class ASRTask(AbsTask):
         else:
             preencoder = None
 
+        if getattr(args, "is_causal", None) is not None:
+            is_causal = args.is_causal
         # 4. Encoder
         encoder_class = encoder_choices.get_class(args.encoder)
-        encoder = encoder_class(input_size=input_size, **args.encoder_conf)
+        if is_causal:
+            encoder = encoder_class(input_size=input_size, **args.encoder_conf, is_causal=is_causal)
+        else:
+            encoder = encoder_class(input_size=input_size, **args.encoder_conf)
 
         # 5. Post-encoder block
         # NOTE(kan-bayashi): Use getattr to keep the compatibility
@@ -660,6 +703,9 @@ class ASRTask(AbsTask):
             token_list=token_list,
             blocks_training=blocks_training,
             blocks_inference=blocks_inference,
+            random_blocks=random_blocks,
+            uniform_sampling=uniform_sampling,
+            is_self_distilling=is_self_distilling,
             **args.model_conf,
         )
 

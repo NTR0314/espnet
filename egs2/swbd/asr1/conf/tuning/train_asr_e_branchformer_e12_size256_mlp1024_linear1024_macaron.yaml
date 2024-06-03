@@ -46,8 +46,8 @@ seed: 2022
 use_amp: true
 num_workers: 4
 batch_type: numel
-batch_bins: 40000000
-accum_grad: 1
+batch_bins: 2500000
+accum_grad: 16
 max_epoch: 100
 init: none
 best_model_criterion:

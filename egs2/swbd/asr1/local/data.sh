@@ -38,9 +38,12 @@ fi
   # SWBD: LDC97S62 LDC2002S09 LDC2002T43 LDC2004T19 LDC2005T19 LDC2004S13 LDC2005S13
 swbd1_dir=${SWBD}/LDC97S62
 eval2000_dir="${SWBD}/LDC2002S09/hub5e_00 ${SWBD}/LDC2002T43"
-fisher_dir="${SWBD}/LDC2004T19 ${SWBD}/LDC2005T19 ${SWBD}/LDC2004S13 ${SWBD}/LDC2005S13"
+# [OSWALD]: So many problems with fisher shit just set to empty
+fisher_dir=""
+# fisher_dir="${SWBD}/LDC2004T19 ${SWBD}/LDC2005T19 ${SWBD}/LDC2004S13 ${SWBD}/LDC2005S13"
 
-
+# [OSWALD]: Test of swb1_dir is set
+echo $swbd1_dir
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     log " Data Preparation"
@@ -51,6 +54,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     if [ -n "${fisher_dir}" ]; then
          local/fisher_data_prep.sh ${fisher_dir}
     fi
+    echo OSWALD: Es geht weiter
     # upsample audio from 8k to 16k to make a recipe consistent with others
     for x in train eval2000; do
         sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" data/${x}/wav.scp

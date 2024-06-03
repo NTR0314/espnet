@@ -453,7 +453,7 @@ class BeamSearch(torch.nn.Module):
                 os.makedirs(save_path / 'attn_dir', exist_ok=True)
                 step = best.yseq.shape[1] - 1
                 layer = 6
-                file_name = f'utt_{utt_key}_step_{step:03}_layer_{i:03}'
+                file_name = f'utt_{utt_key}_step_{step:03}'
                 full_path = save_path / 'attn_dir' / file_name
                 attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
                 import numpy as np

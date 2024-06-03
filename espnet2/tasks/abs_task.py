@@ -1266,6 +1266,7 @@ class AbsTask(ABC):
             logging.info("Skipping model building in collect_stats stage.")
         else:
             # 2. Build model
+            # [OSWALD]: Add arg for additional loss here -> can use arg in ESPNetAsrModel()
             model = cls.build_model(args=args)
             if not isinstance(model, AbsESPnetModel):
                 raise RuntimeError(
@@ -1474,6 +1475,7 @@ class AbsTask(ABC):
             # Don't give args to trainer.run() directly!!!
             # Instead of it, define "Options" object and build here.
             trainer_options = cls.trainer.build_options(args)
+            # import pdb; pdb.set_trace()
             cls.trainer.run(
                 model=model,
                 optimizers=optimizers,

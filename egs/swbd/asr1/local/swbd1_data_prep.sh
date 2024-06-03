@@ -30,7 +30,6 @@ SWBD_DIR=$1
 dir=data/local/train
 mkdir -p $dir
 
-
 # Audio data directory check
 if [ ! -d $SWBD_DIR ]; then
   echo "Error: run.sh requires a directory argument"
