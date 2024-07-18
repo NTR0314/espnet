@@ -1210,7 +1210,6 @@ class AbsTask(ABC):
     @classmethod
     @typechecked
     def main_worker(cls, args: argparse.Namespace):
-
         # 0. Init distributed process
         distributed_option = build_dataclass(DistributedOption, args)
         # Setting distributed_option.dist_rank, etc.
@@ -1266,7 +1265,6 @@ class AbsTask(ABC):
             logging.info("Skipping model building in collect_stats stage.")
         else:
             # 2. Build model
-            # [OSWALD]: Add arg for additional loss here -> can use arg in ESPNetAsrModel()
             model = cls.build_model(args=args)
             if not isinstance(model, AbsESPnetModel):
                 raise RuntimeError(
@@ -1399,6 +1397,7 @@ class AbsTask(ABC):
                     ),
                 )
 
+            # OSWALD: nope
             # 7. Build iterator factories
             if args.multiple_iterator:
                 train_iter_factory = cls.build_multiple_iter_factory(
@@ -1475,7 +1474,6 @@ class AbsTask(ABC):
             # Don't give args to trainer.run() directly!!!
             # Instead of it, define "Options" object and build here.
             trainer_options = cls.trainer.build_options(args)
-            # import pdb; pdb.set_trace()
             cls.trainer.run(
                 model=model,
                 optimizers=optimizers,
@@ -1613,6 +1611,10 @@ class AbsTask(ABC):
         - 4 epoch with "--num_iters_per_epoch" == 1
 
         """
+        # OSWALD:
+        """
+        IteratorOptions(preprocess_fn=<espnet2.train.preprocessor.CommonPreprocessor object at 0x7f4a1c066160>, collate_fn=<class 'espnet2.train.collate_fn.CommonCollateFn'>(float_pad_value=0.0, int_pad_value=0.0), data_path_and_name_and_type=[('dump/raw/train_nodup_sp/wav.scp', 'speech', 'kaldi_ark'), ('dump/raw/train_nodup_sp/text', 'text', 'text'), ('/export/data2/ozink/word_timings_sp.txt', 'w_timing', 'str_timestamps')], shape_files=['exp/asr_stats_raw_en_bpe2000_sp/train/speech_shape', 'exp/asr_stats_raw_en_bpe2000_sp/train/text_shape.bpe'], batch_size=20, batch_bins=1000000, batch_type='numel', max_cache_size=0.0, max_cache_fd=32, allow_multi_rates=False, distributed=False, num_batches=None, num_iters_per_epoch=None, train=True)
+        """
         iter_options = cls.build_iter_options(args, distributed_option, mode)
 
         # Overwrite iter_options if any kwargs is given
@@ -1625,6 +1627,7 @@ class AbsTask(ABC):
         else:
             iterator_type = args.iterator_type
 
+        # [OSWALD]: swbd -> sequence type
         if iterator_type == "sequence":
             return cls.build_sequence_iter_factory(
                 args=args,
@@ -1666,6 +1669,7 @@ class AbsTask(ABC):
             max_cache_fd=iter_options.max_cache_fd,
             allow_multi_rates=iter_options.allow_multi_rates,
         )
+        # word segments not her, missing in iter_options.data...
         cls.check_task_requirements(
             dataset, args.allow_variable_data_keys, train=iter_options.train
         )

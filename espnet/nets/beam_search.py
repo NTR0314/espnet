@@ -393,6 +393,7 @@ class BeamSearch(torch.nn.Module):
         text_gt = None,
         utt_key = None,
         save_path=None,
+        first_masked_frame=0,
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -458,7 +459,22 @@ class BeamSearch(torch.nn.Module):
                 attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
                 import numpy as np
                 np.save(full_path, attn_dump)
-
+            # Code above saves att dump of EOS token. But also save each step attn to analyze monotonicity
+            save_all_att = True
+            if save_all_att:
+                import os
+                os.makedirs(save_path / 'attn_dir_all_steps' / utt_key , exist_ok=True)
+                with open(save_path/'attn_dir_all_steps'/'blocks_inference.txt','w+') as f:
+                    # TODO OSWALD saving this each decoding step xD -> ugly
+                    f.write(f"{self.full_scorers['decoder'].blocks_inference}")
+                step = best.yseq.shape[1] - 1
+                # for now only look at last layer
+                layer = 6
+                file_name = f'utt_{utt_key}_step_{step:03}'
+                full_path = save_path / 'attn_dir_all_steps' / utt_key / file_name
+                attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
+                import numpy as np
+                np.save(full_path, attn_dump)
 
             # post process of one iteration
             running_hyps = self.post_process(

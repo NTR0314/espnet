@@ -615,7 +615,7 @@ class Trainer:
                 **autocast_args,
             ):
                 with reporter.measure_time("forward_time"):
-                    retval = model(**batch)
+                    retval = model(**batch, epoch=reporter.get_epoch(), output_dir=options.output_dir)
 
                     # Note(kamo):
                     # Supporting two patterns for the returned value from the model

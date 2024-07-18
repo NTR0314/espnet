@@ -13,7 +13,6 @@ import kaldiio
 import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
-from typeguard import typechecked
 
 from espnet2.fileio.multi_sound_scp import MultiSoundScpReader
 from espnet2.fileio.npy_scp import NpyScpReader
@@ -26,6 +25,8 @@ from espnet2.fileio.read_text import (
     load_num_sequence_text,
     read_2columns_text,
     read_label,
+    read_pipe_seperated_values,
+    read_libri_mfa_text,
 )
 from espnet2.fileio.rttm import RttmReader
 from espnet2.fileio.score_scp import SingingScoreReader
@@ -34,7 +35,6 @@ from espnet2.utils.sized_dict import SizedDict
 
 
 class AdapterForSoundScpReader(collections.abc.Mapping):
-    @typechecked
     def __init__(self, loader, dtype=None, allow_multi_rates=False):
         self.loader = loader
         self.dtype = dtype
@@ -109,7 +109,6 @@ class H5FileWrapper:
 
 
 class AdapterForSingingScoreScpReader(collections.abc.Mapping):
-    @typechecked
     def __init__(self, loader):
         self.loader = loader
 
@@ -135,7 +134,6 @@ class AdapterForSingingScoreScpReader(collections.abc.Mapping):
 
 
 class AdapterForLabelScpReader(collections.abc.Mapping):
-    @typechecked
     def __init__(self, loader):
         self.loader = loader
 
@@ -400,6 +398,18 @@ DATA_TYPES = {
         "    END     file1 <NA> 4023 <NA> <NA> <NA> <NA>"
         "   ...",
     ),
+    # OSWALD
+    "str_timestamps_libri": dict(
+        func=read_libri_mfa_text,
+        kwargs=[],
+        help='',
+    ),
+    # OSWALD
+    "str_timestamps": dict(
+        func=read_pipe_seperated_values,
+        kwargs=[],
+        help='',
+    ),
 }
 
 
@@ -428,7 +438,6 @@ class ESPnetDataset(AbsDataset):
         {'input': per_utt_array, 'output': per_utt_array}
     """
 
-    @typechecked
     def __init__(
         self,
         path_name_type_list: Collection[Tuple[str, str, str]],
@@ -461,6 +470,7 @@ class ESPnetDataset(AbsDataset):
             if name in self.loader_dict:
                 raise RuntimeError(f'"{name}" is duplicated for data-key')
 
+            #import pdb;pdb.set_trace()
             loader = self._build_loader(path, _type)
             self.loader_dict[name] = loader
             self.debug_info[name] = path, _type
@@ -535,7 +545,6 @@ class ESPnetDataset(AbsDataset):
         _mes += f"\n  preprocess: {self.preprocess})"
         return _mes
 
-    @typechecked
     def __getitem__(self, uid: Union[str, int]) -> Tuple[str, Dict[str, np.ndarray]]:
 
         # Change integer-id to string-id
@@ -543,6 +552,7 @@ class ESPnetDataset(AbsDataset):
             d = next(iter(self.loader_dict.values()))
             uid = list(d)[uid]
 
+        # import pdb;pdb.set_trace()
         if self.cache is not None and uid in self.cache:
             data = self.cache[uid]
             return uid, data
@@ -555,7 +565,8 @@ class ESPnetDataset(AbsDataset):
                 if isinstance(value, (list)):
                     value = np.array(value)
                 if not isinstance(
-                    value, (np.ndarray, torch.Tensor, str, numbers.Number, tuple)
+                    # [OSWALD]: Add dict
+                    value, (np.ndarray, torch.Tensor, str, numbers.Number, tuple, dict)
                 ):
                     raise TypeError(
                         (
@@ -597,6 +608,7 @@ class ESPnetDataset(AbsDataset):
             elif value.dtype.kind == "i":
                 value = value.astype(self.int_dtype)
             else:
+                print(value)
                 raise NotImplementedError(f"Not supported dtype: {value.dtype}")
             data[name] = value
 

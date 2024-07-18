@@ -30,6 +30,9 @@ class NumElementsBatchSampler(AbsSampler):
             )
 
         self.batch_bins = batch_bins
+        # OSWALD
+        # import logging
+        # logging.info(f"{shape_files=}")
         self.shape_files = shape_files
         self.sort_in_batch = sort_in_batch
         self.sort_batch = sort_batch

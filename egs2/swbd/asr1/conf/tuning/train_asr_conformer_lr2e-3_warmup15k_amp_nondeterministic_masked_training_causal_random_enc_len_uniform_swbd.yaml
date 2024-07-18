@@ -29,8 +29,12 @@ decoder_conf:
 
 model_conf:
     ctc_weight: 0.3
+    distill_weight: 0.01
     lsm_weight: 0.1
     length_normalized_loss: false
+
+ctc_conf:
+    ignore_nan_grad: true
 
 frontend_conf:
     n_fft: 512
@@ -44,10 +48,10 @@ num_workers: 4
 sort_in_batch: descending       # how to sort data in making batch
 sort_batch: descending          # how to sort created batches
 batch_type: numel
-# TITAN X crashes with 16 000 000 numel -> Try 12 000 000
-batch_bins: 4000000
-# Should be changed equivalently to batch bins changes
-accum_grad: 16
+  # 1 000 000
+batch_bins: 32000000
+# Should be changed equivalently to batch bins changes. 64 = 1 mio
+accum_grad: 2
 max_epoch: 70
 patience: none
 init: none
@@ -87,9 +91,9 @@ specaug_conf:
 
 # OSWALD Training approach 2
 # [0, 1500ms]
-blocks_training: 150
+blocks_training: 45
 # [0, 1500ms]
-random_blocks: 150
+random_blocks: 45
 is_causal: true
 uniform_sampling: true
 is_self_distilling: true

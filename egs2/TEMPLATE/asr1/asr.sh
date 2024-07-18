@@ -28,6 +28,9 @@ gpu_id=
 # OSWALD: Used for approach2 inference
 blocks_inference=
 blocks_training=
+# OSWALD: Used for approach2 swbd timings
+use_swbd_timings=false
+use_libri_timings=false
 
 # General configuration
 stage=1              # Processes starts from the specified stage.
@@ -572,7 +575,6 @@ skip_stages=$(echo "${skip_stages}" | tr ' ' '\n' | sort -nu | tr '\n' ' ')
 log "Skipped stages: ${skip_stages}"
 
 # ========================== Main stages start from here. ==========================
-
 
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ] && ! [[ " ${skip_stages} " =~ [[:space:]]1[[:space:]] ]]; then
@@ -1415,6 +1417,19 @@ if [ ${stage} -le 11 ] && [ ${stop_stage} -ge 11 ] && ! [[ " ${skip_stages} " =~
         _opts+="--use_lang_prompt ${use_lang_prompt} "
         _opts+="--use_nlp_prompt ${use_nlp_prompt} "
     fi
+
+    # [OSWALD]: swbd timings
+    if ${use_libri_timings}; then
+      _opts+="--allow_variable_data_keys True "
+      _opts+="--train_data_path_and_name_and_type /export/data2/ozink/librispeech_100/mfa_train100.txt,w_timing_libri,str_timestamps_libri "
+      _opts+="--valid_data_path_and_name_and_type /export/data2/ozink/librispeech_100/mfa_valid.txt,w_timing_libri,str_timestamps_libri "
+    fi
+    if ${use_swbd_timings}; then
+      _opts+="--allow_variable_data_keys True "
+      _opts+="--train_data_path_and_name_and_type /export/data2/ozink/word_timings_sp.txt,w_timing,str_timestamps "
+      _opts+="--valid_data_path_and_name_and_type /export/data2/ozink/word_timings_dev.txt,w_timing,str_timestamps "
+    fi
+
     log "Generate '${asr_exp}/run.sh'. You can resume the process from stage 11 using this script"
     mkdir -p "${asr_exp}"; echo "${run_args} --stage 11 \"\$@\"; exit \$?" > "${asr_exp}/run.sh"; chmod +x "${asr_exp}/run.sh"
 
@@ -1604,7 +1619,6 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
                 --batch_size ${batch_size} \
                 --ngpu "${_ngpu}" \
                 --data_path_and_name_and_type "${_data}/${_scp},speech,${_type}" \
-                --data_path_and_name_and_type "${_data}/text,text_gt,text" \
                 --key_file "${_logdir}"/keys.JOB.scp \
                 --asr_train_config "${asr_exp}"/config.yaml \
                 --asr_model_file "${asr_exp}"/"${inference_asr_model}" \

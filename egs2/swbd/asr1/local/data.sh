@@ -43,7 +43,8 @@ fisher_dir=""
 # fisher_dir="${SWBD}/LDC2004T19 ${SWBD}/LDC2005T19 ${SWBD}/LDC2004S13 ${SWBD}/LDC2005S13"
 
 # [OSWALD]: Test of swb1_dir is set
-echo $swbd1_dir
+echo $SWBD
+exit
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     log " Data Preparation"
@@ -54,7 +55,6 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     if [ -n "${fisher_dir}" ]; then
          local/fisher_data_prep.sh ${fisher_dir}
     fi
-    echo OSWALD: Es geht weiter
     # upsample audio from 8k to 16k to make a recipe consistent with others
     for x in train eval2000; do
         sed -i.bak -e "s/$/ sox -R -t wav - -t wav - rate 16000 dither | /" data/${x}/wav.scp

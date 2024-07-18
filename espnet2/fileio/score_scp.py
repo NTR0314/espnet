@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Union
 
 import numpy as np
-from typeguard import typechecked
 
 from espnet2.fileio.read_text import read_2columns_text
 
@@ -40,7 +39,6 @@ class XMLReader(collections.abc.Mapping):
         >>> tempo, note_list = reader['key1']
     """
 
-    @typechecked
     def __init__(
         self,
         fname,
@@ -141,7 +139,6 @@ class XMLWriter:
 
     """
 
-    @typechecked
     def __init__(
         self,
         outdir: Union[Path, str],
@@ -212,7 +209,6 @@ class MIDReader(collections.abc.Mapping):
         >>> tempo, note_list = reader['key1']
     """
 
-    @typechecked
     def __init__(
         self,
         fname,
@@ -284,7 +280,6 @@ class SingingScoreReader(collections.abc.Mapping):
 
     """
 
-    @typechecked
     def __init__(
         self,
         fname,
@@ -331,7 +326,6 @@ class SingingScoreWriter:
 
     """
 
-    @typechecked
     def __init__(
         self,
         outdir: Union[Path, str],

@@ -472,7 +472,7 @@ class Speech2Text:
 
     @torch.no_grad()
     @typechecked
-    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0, utt_key=None) -> Union[
+    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0, utt_key=None, timing_path='') -> Union[
         ListOfHypothesis,
         List[ListOfHypothesis],
         Tuple[
@@ -505,7 +505,13 @@ class Speech2Text:
         batch = to_device(batch, device=self.device)
 
         # b. Forward Encoder
-        enc, enc_olens = self.asr_model.encode(**batch, blocks_inference = blocks_inference)
+        logging.info(f"{blocks_inference=}")
+        # OSWALD: For now hardcoded kwargs so that it complies with the current encode() implementation
+        kwargs = {
+            'utt_id': [utt_key],
+            'timing_path': timing_path,
+        }
+        enc, enc_olens = self.asr_model.encode(**batch, blocks_inference = blocks_inference, **kwargs, is_inference=True)
 
         #[OSWALD]: Zero out encoder
         if test_i_lm:
@@ -640,6 +646,7 @@ class Speech2Text:
                     for module in self.beam_search.nn_dict.decoder.modules():
                         if hasattr(module, "setup_step"):
                             module.setup_step()
+            # OSWALD:
             nbest_hyps = self.beam_search(
                 x=enc,
                 maxlenratio=self.maxlenratio,
@@ -755,6 +762,7 @@ def inference(
     i_lm_eval_cutoff: int,
     blocks_inference: int = 0,
     blocks_training: int = 0,
+    timing_path: str = "",
 ):
     if batch_size > 1:
         raise NotImplementedError("batch decoding is not implemented")
@@ -767,6 +775,7 @@ def inference(
         level=log_level,
         format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
     )
+    logging.info(f"[Approach 2]: asr_inference.py {blocks_inference=}")
 
     if ngpu >= 1:
         device = "cuda"
@@ -836,7 +845,6 @@ def inference(
         preprocess_fn=ASRTask.build_preprocess_fn(speech2text.asr_train_args, False),
         collate_fn=ASRTask.build_collate_fn(speech2text.asr_train_args, False),
         allow_variable_data_keys=allow_variable_data_keys,
-        # Tips from Yosuke: If inference is on it might not load the text
         inference=True,
     )
 
@@ -862,7 +870,7 @@ def inference(
                 test_i_lm = True if i_lm_eval_cutoff != 0 else False
                 save_path = Path(output_dir).parent.parent
                 speech2text.save_path = save_path
-                results = speech2text(**batch, test_i_lm=test_i_lm, i_lm_eval_cutoff=i_lm_eval_cutoff, blocks_inference=blocks_inference, utt_key=keys[0])
+                results = speech2text(**batch, test_i_lm=test_i_lm, i_lm_eval_cutoff=i_lm_eval_cutoff, blocks_inference=blocks_inference, utt_key=keys[0], timing_path=timing_path)
             except TooShortUttError as e:
                 logging.warning(f"Utterance {keys} {e}")
                 hyp = Hypothesis(score=0.0, scores={}, states={}, yseq=[])
@@ -1168,6 +1176,12 @@ def get_parser():
         type=int,
         default=0,
         help="During Approach 2 the amount of encoder blocks to be added to the encoder (before subsampling/conv -> 10ms per block)",
+    )
+    group.add_argument(
+        "--timing_path",
+        type=str,
+        default=None,
+        help="mfa folder path for inference starting at t_{eos}"
     )
     return parser
 

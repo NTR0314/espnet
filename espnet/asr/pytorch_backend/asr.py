@@ -504,6 +504,8 @@ def train(args):
     if not torch.cuda.is_available():
         logging.warning("cuda is not available")
 
+    # OSWALD
+    import pdb; pdb.set_trace()
     # get input and output dimension info
     with open(args.valid_json, "rb") as f:
         valid_json = json.load(f)["utts"]

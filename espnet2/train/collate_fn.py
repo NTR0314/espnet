@@ -204,6 +204,9 @@ def common_collate_fn(
 
     """
     uttids = [u for u, _ in data]
+    # import logging
+    # print(type(data))
+    # logging.info(f"{[x[1]['w_timing_libri'] for x in data]}")
     data = [d for _, d in data]
 
     assert all(set(data[0]) == set(d) for d in data), "dict-keys mismatching"
@@ -226,6 +229,9 @@ def common_collate_fn(
         # Assume the first axis is length:
         # tensor_list: Batch x (Length, ...)
         tensor_list = [torch.from_numpy(a) for a in array_list]
+        # [OSWALD]:
+        # for x in tensor_list:
+            # print(x)
         # tensor: (Batch, Length, ...)
         tensor = pad_list(tensor_list, pad_value)
         output[key] = tensor

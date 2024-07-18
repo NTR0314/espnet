@@ -14,7 +14,7 @@ inference_config=conf/decode_asr_approach2.yaml
 
 ./asr.sh \
     --lang en \
-    --ngpu 1 \
+    --ngpu 6 \
     --token_type bpe \
     --nj 16 \
     --gpu_inference true \

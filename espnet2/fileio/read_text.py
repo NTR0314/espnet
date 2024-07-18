@@ -36,6 +36,36 @@ def read_2columns_text(path: Union[Path, str]) -> Dict[str, str]:
             data[k] = v
     return data
 
+# OSWALD
+def read_libri_mfa_text(path):
+    """ example: utt_id "w1,w2,,w4" "t1,t2,t3,t4" """
+    data = {}
+    with Path(path).open("r", encoding="utf-8") as f:
+        for l in f:
+            # Manchmal ist im word vom timing auch spaces -> maxsplit = 1
+            uid, words, timings = l.rstrip('\n').split()
+            ws = words.split(',')
+            timings = timings.strip("\"")
+            ts = timings.split(',')
+            assert len(ws) == len(ts)
+            d = [(x, y) for x, y in zip(ws,ts)]
+            #print(d)
+            data[uid] = d
+    return data
+
+# OSWALD
+def read_pipe_seperated_values(path):
+    """ example: key1 (start, stop, word)|....(startn,stopn,wordn)| """
+    data = {}
+    with Path(path).open("r", encoding="utf-8") as f:
+        for l in f:
+            # Manchmal ist im word vom timing auch spaces -> maxsplit = 1
+            uid, wss = l.rstrip('|\n').split(' ', maxsplit=1)
+            ws = wss.split('|')
+            ws = [x.strip('()') for x in ws]
+            ws = [{'start': int(x.split(',')[0]), 'stop':int(x.split(',')[1]), 'word': x.split(',')[2]} for x in ws]
+            data[uid] = ws
+    return data
 
 @typechecked
 def read_multi_columns_text(

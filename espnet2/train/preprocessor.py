@@ -158,6 +158,8 @@ class CommonPreprocessor(AbsPreprocessor):
         speech_volume_normalize: float = None,
         speech_name: str = "speech",
         text_name: str = "text",
+        # [OSWALD]:
+        # str_timestamps: str = "w_timing",
         fs: int = 0,
         nonsplit_symbol: Iterable[str] = None,
         data_aug_effects: List = None,
@@ -171,6 +173,9 @@ class CommonPreprocessor(AbsPreprocessor):
         self.train = train
         self.speech_name = speech_name
         self.text_name = text_name
+        # [OSWALD]:
+        # self.str_timestamps = str_timestamps
+        # self.str_timestamps_libri = str_timestamps_libri
         self.speech_volume_normalize = speech_volume_normalize
         self.rir_apply_prob = rir_apply_prob
         self.noise_apply_prob = noise_apply_prob
@@ -423,7 +428,6 @@ class CommonPreprocessor(AbsPreprocessor):
     def _text_process(
         self, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
-        #import pdb;pdb.set_trace()
         if self.text_name in data and self.tokenizer is not None:
             text = data[self.text_name]
             if isinstance(text, np.ndarray):
@@ -492,11 +496,44 @@ class CommonPreprocessor(AbsPreprocessor):
                     data[name] = np.array(text_ints, dtype=np.int64)
         return data
 
+    # OSWALD: General function for swbd and librispeech timings. Should be renamed but rn cba
+    def _str_timestamps_process(self, data, uid):
+        if 'w_timing' in data:
+            if self.tokenizer is None:
+                raise Error("Must have tokenizer to embed words of word timings.")
+            # 0,0 initialization is for sos which should have timing 0
+            uid = int(uid.split('_')[1].split('-')[0])
+            tmp = [uid,uid]
+            td = data['w_timing']
+            for d in td:
+                sta, sto, wo = d.values()
+
+                a = int(sta)
+                b = int(sto)
+                words = wo.split(' ')
+
+                for word in words:
+                    subwords = self.tokenizer.text2tokens(word)
+                    for subword in subwords:
+                        tmp = tmp + [a, b]
+            res = np.array(tmp)
+            data['w_timing'] = res
+        #TODO implement for librispeech timings
+        if 'w_timing_libri' in data:
+            # Make it very simple and only return last timing
+            lasto = [t for w, t in data['w_timing_libri'] if w != ''][-1]
+            data['w_timing_libri'] = np.array([float(lasto)]).astype(np.float32)
+
+        return data
+
+
     @typechecked
     def __call__(
         self, uid: str, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
 
+        # logging.info(f"\n\n{data =}\n\n")
+        data = self._str_timestamps_process(data, uid)
         data = self._speech_process(data)
         data = self._text_process(data)
         return data

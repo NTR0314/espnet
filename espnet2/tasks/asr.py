@@ -397,12 +397,6 @@ class ASRTask(AbsTask):
             help="Auxillary tasks to train on using CTC loss. ",
         )
         group.add_argument(
-            "--blocks_inference",
-            type=int,
-            default=0,
-            help="The amount of 10ms blocks to be added during Inference"
-        )
-        group.add_argument(
             "--random_blocks",
             type=int,
             default=0,
@@ -432,6 +426,71 @@ class ASRTask(AbsTask):
             default=0,
             help="The amount of 10ms blocks to be masked during Training",
         )
+        group.add_argument(
+            "--use_timing_loss",
+            type=bool,
+            default=False,
+            help="Use timing loss or not",
+        )
+        group.add_argument(
+            "--use_single_head",
+            type=bool,
+            default=False,
+            help="If the loss should only be applied to a single head if the MHA",
+        )
+        group.add_argument(
+            "--only_last_timing",
+            type=bool,
+            default=False,
+            help="Use only the timing of the last word in the segment instead of using all words",
+        )
+        group.add_argument(
+            "--use_last_head_distill",
+            type=bool,
+            default=False,
+        )
+        group.add_argument(
+            "--use_last_layer_distill",
+            type=bool,
+            default=False,
+        )
+        group.add_argument(
+            "--only_last_layer_timing",
+            type=bool,
+            default=False,
+            help="Only use cross attention of last decoder layer for loss instead of all layers",
+        )
+        group.add_argument(
+            "--timing_loss_weight",
+            type=float,
+            default=0.0,
+            help="self explaining",
+        )
+        group.add_argument(
+            "--use_regression_timing",
+            type=bool,
+            default=False,
+            help="",
+        )
+        group.add_argument(
+            "--regression_timing_weight",
+            type=float,
+            default=0.0,
+            help="",
+        )
+
+        group.add_argument(
+            "--use_tuple_loss",
+            type=bool,
+            default=False,
+        )
+
+        group.add_argument(
+            "--tuple_loss_weight",
+            type=float,
+            default=0.0,
+        )
+
 
 
         for class_choices in cls.class_choices_list:
@@ -584,10 +643,18 @@ class ASRTask(AbsTask):
         if getattr(args, "uniform_sampling", None) is not None:
             uniform_sampling = args.uniform_sampling
 
-        if not hasattr(args, 'blocks_inference'):
-            blocks_inference = 0
-        else:
-            blocks_inference = args.blocks_inference
+        use_timing_loss = getattr(args, "use_timing_loss", False)
+        use_single_head = getattr(args, "use_single_head", False)
+        only_last_timing = getattr(args, "only_last_timing", False)
+        use_last_head_distill = getattr(args, "use_last_head_distill", False)
+        use_last_layer_distill = getattr(args, "use_last_layer_distill", False)
+        only_last_layer_timing = getattr(args, "only_last_layer_timing", False)
+        timing_loss_weight = getattr(args, "timing_loss_weight", 0)
+        regression_timing_weight = getattr(args, "regression_timing_weight", 0.)
+        use_regression_timing = getattr(args, "use_regression_timing", False)
+        use_tuple_loss = getattr(args, "use_tuple_loss", False)
+        tuple_loss_weight = getattr(args, "tuple_loss_weight", 0.)
+
 
         if not hasattr(args, 'random_blocks'):
             random_blocks = 0
@@ -669,11 +736,26 @@ class ASRTask(AbsTask):
                     **args.joint_net_conf,
                 )
             else:
-                decoder = decoder_class(
-                    vocab_size=vocab_size,
-                    encoder_output_size=encoder_output_size,
-                    **args.decoder_conf,
-                )
+                # [OSWALD]: Hacky way to also set is_self_distilling in decoder_conf
+                decoder_conf_dict = vars(args)['decoder_conf']
+                if is_self_distilling:
+                    decoder_conf_dict['is_self_distilling'] = True
+                if use_timing_loss:
+                    decoder_conf_dict['use_timing_loss'] = True
+                if use_tuple_loss:
+                    decoder_conf_dict['use_tuple_loss'] = True
+
+                    decoder = decoder_class(
+                        vocab_size=vocab_size,
+                        encoder_output_size=encoder_output_size,
+                        **decoder_conf_dict,
+                    )
+                else:
+                    decoder = decoder_class(
+                        vocab_size=vocab_size,
+                        encoder_output_size=encoder_output_size,
+                        **args.decoder_conf,
+                    )
                 joint_network = None
         else:
             decoder = None
@@ -702,10 +784,20 @@ class ASRTask(AbsTask):
             joint_network=joint_network,
             token_list=token_list,
             blocks_training=blocks_training,
-            blocks_inference=blocks_inference,
             random_blocks=random_blocks,
             uniform_sampling=uniform_sampling,
             is_self_distilling=is_self_distilling,
+            use_timing_loss=use_timing_loss,
+            use_single_head=use_single_head,
+            only_last_timing=only_last_timing,
+            only_last_layer_timing=only_last_layer_timing,
+            timing_loss_weight=timing_loss_weight,
+            use_last_head_distill=use_last_head_distill,
+            use_last_layer_distill= use_last_layer_distill,
+            regression_timing_weight=regression_timing_weight,
+            use_regression_timing=use_regression_timing,
+            use_tuple_loss=use_tuple_loss,
+            tuple_loss_weight=tuple_loss_weight,
             **args.model_conf,
         )
 

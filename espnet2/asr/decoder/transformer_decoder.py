@@ -58,6 +58,9 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
         use_output_layer: bool = True,
         pos_enc_class=PositionalEncoding,
         normalize_before: bool = True,
+        is_self_distilling: bool = False,
+        use_timing_loss: bool = False,
+        use_tuple_loss: bool = False,
     ):
         super().__init__()
         attention_dim = encoder_output_size
@@ -89,6 +92,20 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
         self._output_size_bf_softmax = attention_dim
         # Must set by the inheritance
         self.decoders = None
+
+        self.is_self_distilling = is_self_distilling
+        if self.is_self_distilling:
+            # [OSWALD]: Input is expected to be in log space
+            self.kl_loss = torch.nn.KLDivLoss(reduction='none')
+        self.use_timing_loss = use_timing_loss
+        if self.use_timing_loss:
+            # self.timing_loss = torch.nn.BCELoss()
+            self.timing_loss = torch.nn.NLLLoss(reduction='none', ignore_index=-1)
+            # self.timing_loss = torch.nn.CrossEntropyLoss(reduction='none')
+        self.use_tuple_loss = use_tuple_loss
+        if self.use_tuple_loss:
+            self.tuple_loss = torch.nn.MSELoss(reduction='none') # By default avg
+            self.tuple_layer = torch.nn.Linear(attention_dim, 1)
 
     def forward(
         self,
@@ -150,6 +167,10 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
             x = self.after_norm(x)
         if return_hs:
             hidden = x
+        # OSWALD:
+        if self.use_tuple_loss:
+            t = self.tuple_layer(x)
+            self.tuple_loss_result = t
         if self.output_layer is not None:
             x = self.output_layer(x)
 
@@ -309,6 +330,9 @@ class TransformerDecoder(BaseTransformerDecoder):
         normalize_before: bool = True,
         concat_after: bool = False,
         layer_drop_rate: float = 0.0,
+        is_self_distilling: bool = False,
+        use_timing_loss: bool = False,
+        use_tuple_loss: bool = False,
     ):
         super().__init__(
             vocab_size=vocab_size,
@@ -319,6 +343,9 @@ class TransformerDecoder(BaseTransformerDecoder):
             use_output_layer=use_output_layer,
             pos_enc_class=pos_enc_class,
             normalize_before=normalize_before,
+            is_self_distilling = is_self_distilling,
+            use_timing_loss = use_timing_loss,
+            use_tuple_loss = use_tuple_loss,
         )
 
         attention_dim = encoder_output_size
