@@ -118,7 +118,9 @@ class Speech2Text:
         lang_prompt_token: Optional[str] = None,
         nlp_prompt_token: Optional[str] = None,
         prompt_token_file: Optional[str] = None,
+        use_tuple_loss: bool = False,
     ):
+        self.use_tuple_loss = use_tuple_loss
         task = ASRTask if not enh_s2t_task else EnhS2TTask
 
         if quantize_asr_model or quantize_lm:
@@ -329,7 +331,6 @@ class Speech2Text:
                     token_list=token_list,
                 )
             else:
-                # TODO: If we use text_gt as prefix for internal lm testing, CTC score should be 0
                 beam_search = BeamSearch(
                     beam_size=beam_size,
                     weights=weights,
@@ -340,6 +341,8 @@ class Speech2Text:
                     token_list=token_list,
                     pre_beam_score_key=None if ctc_weight == 1.0 else "full",
                     normalize_length=normalize_length,
+                    #OSWALD
+                    use_tuple_loss=self.use_tuple_loss,
                 )
 
                 # TODO(karita): make all scorers batchfied
@@ -472,7 +475,12 @@ class Speech2Text:
 
     @torch.no_grad()
     @typechecked
-    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0, utt_key=None, timing_path='') -> Union[
+    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0, utt_key=None, timing_path='', timing_path_libri='',
+                 timing_libri_test_clean=None, # Timings for librispeech test set
+                 timing_swbd_eval2000=None, # Timings for librispeech test set
+                 text_gt_libri=None, # Text GT for Librispeech (test st )
+                 text_gt_swbd=None, # Text GT for SWBD (test set also)
+                 ) -> Union[
         ListOfHypothesis,
         List[ListOfHypothesis],
         Tuple[
@@ -510,8 +518,13 @@ class Speech2Text:
         kwargs = {
             'utt_id': [utt_key],
             'timing_path': timing_path,
+            'timing_path_libri':  timing_path_libri,
         }
-        enc, enc_olens = self.asr_model.encode(**batch, blocks_inference = blocks_inference, **kwargs, is_inference=True)
+        enc, enc_olens = self.asr_model.encode(**batch,
+                                               blocks_inference = blocks_inference,
+                                               **kwargs,
+                                               is_inference=True,
+                                               )
 
         #[OSWALD]: Zero out encoder
         if test_i_lm:
@@ -548,10 +561,58 @@ class Speech2Text:
 
             # c. Passed the encoder result and the beam search
             # [OSWALD]: put cut text_gt here
-            if test_i_lm:
-                logging.info(f"USING cutoff for i_lm testing: {i_lm_eval_cutoff=}")
-                text_gt_cut = text_gt[:-i_lm_eval_cutoff]
-                results = self._decode_single_sample(enc[0], text_gt=text_gt_cut)
+            # [OSWALD]: Implicitly check if we are using ground truth text as prompt for decoding
+            if timing_libri_test_clean is not None:
+                logging.info(f"Using ground truth data during inference for decoding masked only. LibriSpeech.")
+                assert len(timing_libri_test_clean) == len(text_gt_libri)
+
+                # sec into ms
+                timing_libri_test_clean *= 1000
+                lasto = timing_libri_test_clean[-1]
+                cutoff = lasto - blocks_inference * 10
+
+                non_masked = []
+                masked = []
+
+                if kwargs['utt_id'] == '1089-134686-0028':
+                    import pdb;pdb.set_trace()
+                for x, y in zip(text_gt_libri, timing_libri_test_clean):
+                    if y <= cutoff:
+                        non_masked.append(x)
+                    else:
+                        masked.append(x)
+
+                masked=torch.tensor(masked)
+                non_masked=torch.tensor(non_masked)
+                logging.info(f"Masked subwords: {len(masked)}. Unmasked subwords: {len(non_masked)}.")
+
+                results = self._decode_single_sample(enc[0], masked=masked, non_masked=non_masked, utt_key=utt_key)
+            elif timing_swbd_eval2000 is not None and text_gt_swbd is not None:
+                logging.info(f"Using ground truth data during inference for decoding masked only. Switboard.")
+                # Load timings
+                # OSWALD: SWBD Eval: MFA
+                try:
+                    assert len(timing_swbd_eval2000) == len(text_gt_swbd), (len(timing_swbd_eval2000), len(text_gt_swbd), kwargs['utt_id'])
+                except:
+                    import pdb;pdb.set_trace()
+
+                # sec into ms
+                timing_swbd_eval2000 *= 1000
+                lasto = timing_swbd_eval2000[-1]
+                cutoff = lasto - blocks_inference * 10
+                non_masked = []
+                masked = []
+                for x, y in zip(text_gt_swbd, timing_swbd_eval2000):
+                    if y <= cutoff:
+                        non_masked.append(x)
+                    else:
+                        masked.append(x)
+
+                masked=torch.tensor(masked)
+                non_masked=torch.tensor(non_masked)
+                logging.info(f"Masked subwords: {len(masked)}. Unmasked subwords: {len(non_masked)}.")
+
+                results = self._decode_single_sample(enc[0], masked=masked, non_masked=non_masked, utt_key=utt_key)
             else:
                 results = self._decode_single_sample(enc[0], utt_key=utt_key)
 
@@ -581,7 +642,10 @@ class Speech2Text:
         return res
 
     @typechecked
-    def _decode_single_sample(self, enc: torch.Tensor, text_gt=None, utt_key=None):
+    def _decode_single_sample(self, enc: torch.Tensor, text_gt=None, utt_key=None,
+                             masked=None,
+                              non_masked=None,
+                              ):
         if self.beam_search_transducer: # no
             logging.info("encoder output length: " + str(enc.shape[0]))
             nbest_hyps = self.beam_search_transducer(enc)
@@ -647,13 +711,19 @@ class Speech2Text:
                         if hasattr(module, "setup_step"):
                             module.setup_step()
             # OSWALD:
+            # import pdb;pdb.set_trace()
+
+            # OSWALD: set min_len so single decoded token is not possible
+            # self.minlenratio = 2. / enc.shape[0]
             nbest_hyps = self.beam_search(
                 x=enc,
                 maxlenratio=self.maxlenratio,
                 minlenratio=self.minlenratio,
                 text_gt=text_gt,
                 utt_key=utt_key,
-                save_path=self.save_path,
+                save_path=self.save_path, #type: ignore
+                masked=masked,
+                non_masked=non_masked,
             )
 
         nbest_hyps = nbest_hyps[: self.nbest]
@@ -763,6 +833,9 @@ def inference(
     blocks_inference: int = 0,
     blocks_training: int = 0,
     timing_path: str = "",
+    timing_path_libri: str = "",
+    use_tuple_loss: bool = False,
+    eos_weight: float = 1.0,
 ):
     if batch_size > 1:
         raise NotImplementedError("batch decoding is not implemented")
@@ -771,6 +844,7 @@ def inference(
     if ngpu > 1:
         raise NotImplementedError("only single GPU decoding is supported")
 
+    import logging
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
@@ -826,16 +900,29 @@ def inference(
     speech2text = Speech2Text.from_pretrained(
         model_tag=model_tag,
         **speech2text_kwargs,
+        use_tuple_loss=use_tuple_loss,
     )
+
+    # OSWALD: Set eos weight
+    speech2text.asr_model.decoder.eos_weight =eos_weight
+    speech2text.asr_model.decoder.eos_token = speech2text.asr_model.eos
 
     # 3. Build data-iterator
     # print(speech2text.asr_train_args) #-> Hier kein aux tasks
 
-    # [OSWALD]: TODO add aux_text_gt as arg in speech2text.asr_train_args with samevalue
+    # [OSWALD]: 
     from argparse import Namespace
     a = vars(speech2text.asr_train_args)
-    a['aux_text_gt'] = 'text_gt'
+    if 'text_gt_libri' in [x[1] for x in data_path_and_name_and_type]:
+        a['aux_text_gt'] = 'text_gt_libri'
+        # OSWALD: idk if this line is necessary
+        a['aux_timing_libri_test_clean'] = 'timing_libri_test_clean'
+    elif 'text_gt_swbd' in [x[1] for x in data_path_and_name_and_type]:
+        a['aux_text_gt'] = 'text_gt_swbd'
+        a['aux_timing_swbd_eval2000'] = 'timing_swbd_eval2000'
     speech2text.asr_train_args = Namespace(**a)
+    import logging
+    # logging.info(f"{key_file=}") # -> passt
     loader = ASRTask.build_streaming_iterator(
         data_path_and_name_and_type,
         dtype=dtype,
@@ -861,16 +948,23 @@ def inference(
             assert len(keys) == _bs, f"{len(keys)} != {_bs}"
             batch = {k: v[0] for k, v in batch.items() if not k.endswith("_lengths")}
 
-            logging.info(f"Currently decoding utterance_key: {keys[0]}")
-            # Oswald: apparently not good practice
-            # logging.handlers[0].flush()
+            # logging.info(f"Currently decoding utterance_key: {keys[0]}")
+            # logging.info(f"{batch=}")
+            # import pdb;pdb.set_trace()
 
             # N-best list of (text, token, token_int, hyp_object)
             try:
                 test_i_lm = True if i_lm_eval_cutoff != 0 else False
                 save_path = Path(output_dir).parent.parent
                 speech2text.save_path = save_path
-                results = speech2text(**batch, test_i_lm=test_i_lm, i_lm_eval_cutoff=i_lm_eval_cutoff, blocks_inference=blocks_inference, utt_key=keys[0], timing_path=timing_path)
+                results = speech2text(**batch,
+                                      test_i_lm=test_i_lm,
+                                      i_lm_eval_cutoff=i_lm_eval_cutoff,
+                                      blocks_inference=blocks_inference,
+                                      utt_key=keys[0],
+                                      timing_path=timing_path,
+                                      timing_path_libri=timing_path_libri,
+                                      )
             except TooShortUttError as e:
                 logging.warning(f"Utterance {keys} {e}")
                 hyp = Hypothesis(score=0.0, scores={}, states={}, yseq=[])
@@ -1178,10 +1272,26 @@ def get_parser():
         help="During Approach 2 the amount of encoder blocks to be added to the encoder (before subsampling/conv -> 10ms per block)",
     )
     group.add_argument(
+        "--timing_path_libri",
+        type=str,
+        default="",
+        help=""
+    )
+    group.add_argument(
         "--timing_path",
         type=str,
-        default=None,
+        default="",
         help="mfa folder path for inference starting at t_{eos}"
+    )
+    group.add_argument(
+        "--use_tuple_loss",
+        type=bool,
+        default=False,
+    )
+    group.add_argument(
+        "--eos_weight",
+        type=float,
+        default=1.0,
     )
     return parser
 

@@ -1,4 +1,5 @@
 import collections.abc
+import numpy as np
 import logging
 from mmap import mmap
 from pathlib import Path
@@ -52,6 +53,20 @@ def read_libri_mfa_text(path):
             #print(d)
             data[uid] = d
     return data
+# OSWALD
+def read_libri_mfa_text_iterable(data_in):
+    """ example: utt_id "w1,w2,,w4" "t1,t2,t3,t4" """
+    # Manchmal ist im word vom timing auch spaces -> maxsplit = 1
+    # import logging
+    # logging.info(f"{data_in=}")
+    words, timings = data_in.rstrip('\n').split()
+    ws = words.split(',')
+    timings = timings.strip("\"")
+    ts = timings.split(',')
+    assert len(ws) == len(ts)
+    d = [(x, y) for x, y in zip(ws,ts) if x != r'"' and x != '']
+    d = np.array(d)
+    return d
 
 # OSWALD
 def read_pipe_seperated_values(path):

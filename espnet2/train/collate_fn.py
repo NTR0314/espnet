@@ -231,7 +231,7 @@ def common_collate_fn(
         tensor_list = [torch.from_numpy(a) for a in array_list]
         # [OSWALD]:
         # for x in tensor_list:
-            # print(x)
+        #     print(x.shape)
         # tensor: (Batch, Length, ...)
         tensor = pad_list(tensor_list, pad_value)
         output[key] = tensor

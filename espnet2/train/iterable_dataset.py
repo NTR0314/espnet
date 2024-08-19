@@ -12,6 +12,13 @@ import torch
 from torch.utils.data.dataset import IterableDataset
 from typeguard import typechecked
 
+# OSWALD
+from espnet2.fileio.read_text import (
+    read_pipe_seperated_values,
+    read_libri_mfa_text_iterable,
+)
+
+
 from espnet2.train.dataset import ESPnetDataset
 
 
@@ -61,6 +68,10 @@ DATA_TYPES = {
         StringIO(x), ndmin=1, dtype=np.float32, delimiter=","
     ),
     "text": lambda x: x,
+    # OSWALD
+    "str_timestamps_libri": read_libri_mfa_text_iterable,
+    # OSWALD
+    "str_timestamps": read_pipe_seperated_values,
 }
 
 
@@ -157,12 +168,17 @@ class IterableESPnetDataset(IterableDataset):
             uid_iter = iter(self.non_iterable_dataset)
 
         files = [open(lis[0], encoding="utf-8") for lis in self.path_name_type_list]
-
+        #OSWALD
+        import logging
+        # logging.info(f"{list(uid_iter)=}") -> alle uids?
+        # logging.info(f"{files=}")
         worker_info = torch.utils.data.get_worker_info()
+        # logging.info(f"{worker_info=}")
 
         linenum = 0
         count = 0
         for count, uid in enumerate(uid_iter, 1):
+            # logging.info(f"{uid=}")
             # If num_workers>=1, split keys
             if worker_info is not None:
                 if (count - 1) % worker_info.num_workers != worker_info.id:
@@ -189,6 +205,8 @@ class IterableESPnetDataset(IterableDataset):
                     keys.append(key)
                     values.append(value)
 
+                # import logging
+                # logging.info(f"{keys=}")
                 for k_idx, k in enumerate(keys):
                     if k != keys[0]:
                         raise RuntimeError(
@@ -204,10 +222,16 @@ class IterableESPnetDataset(IterableDataset):
             data = {}
             # 2.a. Load data streamingly
             for value, (path, name, _type) in zip(values, self.path_name_type_list):
+                # import logging
+                # logging.info(f"{value=}")
                 func = DATA_TYPES[_type]
                 # Load entry
                 array = func(value)
+                # import logging
+                # logging.info(f"{array=}")
                 data[name] = array
+            # OSWALD
+            import logging
             if self.non_iterable_dataset is not None:
                 # 2.b. Load data from non-iterable dataset
                 _, from_non_iterable = self.non_iterable_dataset[uid]
@@ -216,8 +240,11 @@ class IterableESPnetDataset(IterableDataset):
 
             # 3. [Option] Apply preprocessing
             #   e.g. espnet2.train.preprocessor:CommonPreprocessor
+            import logging
+            # logging.info(f"{data=}")
             if self.preprocess is not None:
                 data = self.preprocess(uid, data)
+            # logging.info(f"{data=}")
 
             # 4. Force data-precision
             for name in data:
@@ -237,6 +264,11 @@ class IterableESPnetDataset(IterableDataset):
                     raise NotImplementedError(f"Not supported dtype: {value.dtype}")
                 data[name] = value
 
+            # seems like the func called 3 times
+            # logging.info(f"{data=}")
+            # logging.info(f"{uid=}")
+            # import logging
+            # logging.info(f"yielding")
             yield uid, data
 
         if count == 0:

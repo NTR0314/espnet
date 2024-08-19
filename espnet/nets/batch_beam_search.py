@@ -127,6 +127,7 @@ class BatchBeamSearch(BeamSearch):
         new_token_ids = top_ids % self.n_vocab
         return prev_hyp_ids, new_token_ids, prev_hyp_ids, new_token_ids
 
+    #OSWALD
     def init_hyp(self, x: torch.Tensor, y: torch.Tensor=None) -> BatchHypothesis:
         """Get an initial hypothesis data.
 
@@ -147,7 +148,7 @@ class BatchBeamSearch(BeamSearch):
         # NOTE (Shih-Lun): added for OpenAI Whisper ASR
         primer = [self.sos] if self.hyp_primer is None else self.hyp_primer
         if y is not None:
-            logging.info(f"Using prefix text as i_lm_test: {y}")
+            logging.info(f"Using prefix for decoding")
             # Idk why but y/text_gt is on CPU -> move to GPU
             y = y.to(x.device)
             y = torch.cat((torch.tensor(primer, device=x.device), y))
@@ -201,6 +202,8 @@ class BatchBeamSearch(BeamSearch):
         """
         scores = dict()
         states = dict()
+        # OSWALD:
+        times = dict()
         for k, d in self.full_scorers.items():
             # [OSWALD]: self.return_hs = False
             if "decoder" in k and self.return_hs:
@@ -213,12 +216,17 @@ class BatchBeamSearch(BeamSearch):
             else:
                 # [OSWALD]: Glaube das wird aufgerufen
                 if self.utt_key != None:
-                    scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x, utt_key=self.utt_key)
+                    if not self.use_tuple_loss:
+                        scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x, utt_key=self.utt_key)
+                    else:
+                        scores[k], states[k], times[k] = d.batch_score(hyp.yseq, hyp.states[k], x, utt_key=self.utt_key)
                 else:
                     raise ValueError("utt_key not provided in batch beam search")
 
         if self.return_hs:
             return hs, scores, states
+        if self.use_tuple_loss:
+            return scores, states, times
         return scores, states
 
     def score_partial(
@@ -316,15 +324,28 @@ class BatchBeamSearch(BeamSearch):
                 ),
             )
         else:
-            scores, states = self.score_full(
-                running_hyps,
-                # [OSWALD]: Copy speech features for each batch, e.g., expanding
-                x.expand(n_batch, *x.shape),
-                pre_x=(
-                    pre_x.expand(n_batch, *pre_x.shape) if pre_x is not None else None
-                ),
-            )
+            if not self.use_tuple_loss:
+                scores, states = self.score_full(
+                    running_hyps,
+                    # [OSWALD]: Copy speech features for each batch, i.e., expand x to batchsize
+                    x.expand(n_batch, *x.shape),
+                    pre_x=(
+                        pre_x.expand(n_batch, *pre_x.shape) if pre_x is not None else None
+                    ),
+                )
+            else:
+                scores, states, times = self.score_full(
+                    running_hyps,
+                    # [OSWALD]: Copy speech features for each batch, i.e., expand x to batchsize
+                    x.expand(n_batch, *x.shape),
+                    pre_x=(
+                        pre_x.expand(n_batch, *pre_x.shape) if pre_x is not None else None
+                    ),
+                )
 
+        # [OSWALD]:
+        # print("decoder")
+        # print(torch.topk(scores['decoder'][0], 8).indices)
         for k in self.full_scorers:
             weighted_scores += self.weights[k] * scores[k]
         # partial scoring
@@ -348,14 +369,17 @@ class BatchBeamSearch(BeamSearch):
             weighted_scores += self.weights[k] * part_scores[k]
         # add previous hyp scores
         # [OSWALD]: TODO: can we + here because it's log probs? Running hyp prob auf jedes vok token von weighted scores addieren
+        # [OSWALD]: \in [batchsize x voc size], pre_beam_size only used for partial ctc scoring?
         weighted_scores += running_hyps.score.to(
             dtype=x.dtype, device=x.device
         ).unsqueeze(1)
 
+        #import pdb;pdb.set_trace()
         # TODO(karita): do not use list. use batch instead
         # see also https://github.com/espnet/espnet/pull/1402#discussion_r354561029
         # update hyps
         best_hyps = []
+        # [OSWALD]: make BatchHyp to list
         prev_hyps = self.unbatchfy(running_hyps)
         for (
             full_prev_hyp_id,
@@ -395,6 +419,8 @@ class BatchBeamSearch(BeamSearch):
                     hs=new_hs,
                 )
             )
+        if self.use_tuple_loss:
+            return self.batchfy(best_hyps), times
         return self.batchfy(best_hyps)
 
     def post_process(

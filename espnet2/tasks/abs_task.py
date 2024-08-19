@@ -1661,6 +1661,8 @@ class AbsTask(ABC):
         cls, args: argparse.Namespace, iter_options: IteratorOptions, mode: str
     ) -> AbsIterFactory:
 
+        # OSWALD: 
+        logging.info(f"{iter_options.data_path_and_name_and_type=}")
         dataset = ESPnetDataset(
             iter_options.data_path_and_name_and_type,
             float_dtype=args.train_dtype,
@@ -2042,7 +2044,7 @@ class AbsTask(ABC):
         else:
             kwargs = {}
 
-
+        logging.info(f"{data_path_and_name_and_type=}")
         dataset = IterableESPnetDataset(
             data_path_and_name_and_type,
             float_dtype=dtype,

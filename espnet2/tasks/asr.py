@@ -421,6 +421,12 @@ class ASRTask(AbsTask):
             help="If the model uses self-distillation for cross attention. Specifically, this is used in the masked training fashion. Here, if set we use the output ofr the unmasked forward pass to calculate the cross attention. These values are then cached and then used as reference (self distillation?) for the masked model. We (plan to) use a KL Div loss.",
         )
         group.add_argument(
+            "--fixed_blocks",
+            type=int,
+            default=0,
+            help="The amount of blocks that are ALWAYS masked.",
+        )
+        group.add_argument(
             "--blocks_training",
             type=int,
             default=0,
@@ -478,19 +484,16 @@ class ASRTask(AbsTask):
             default=0.0,
             help="",
         )
-
         group.add_argument(
             "--use_tuple_loss",
             type=bool,
             default=False,
         )
-
         group.add_argument(
             "--tuple_loss_weight",
             type=float,
             default=0.0,
         )
-
 
 
         for class_choices in cls.class_choices_list:
@@ -631,19 +634,11 @@ class ASRTask(AbsTask):
         vocab_size = len(token_list)
         logging.info(f"Vocabulary size: {vocab_size }")
 
-        # OSWALD: blocks
-        if not hasattr(args, 'blocks_training'):
-            blocks_training = 0
-        else:
-            blocks_training = args.blocks_training
-
-        if getattr(args, "is_self_distilling", None) is not None:
-            is_self_distilling = args.is_self_distilling
-
-        if getattr(args, "uniform_sampling", None) is not None:
-            uniform_sampling = args.uniform_sampling
-
+        blocks_training = getattr(args, "blocks_training", 0)
+        is_self_distilling = getattr(args, "is_self_distilling", False)
+        uniform_sampling = getattr(args, "uniform_sampling", False)
         use_timing_loss = getattr(args, "use_timing_loss", False)
+        fixed_blocks = getattr(args, "fixed_blocks", 0)
         use_single_head = getattr(args, "use_single_head", False)
         only_last_timing = getattr(args, "only_last_timing", False)
         use_last_head_distill = getattr(args, "use_last_head_distill", False)
@@ -654,12 +649,7 @@ class ASRTask(AbsTask):
         use_regression_timing = getattr(args, "use_regression_timing", False)
         use_tuple_loss = getattr(args, "use_tuple_loss", False)
         tuple_loss_weight = getattr(args, "tuple_loss_weight", 0.)
-
-
-        if not hasattr(args, 'random_blocks'):
-            random_blocks = 0
-        else:
-            random_blocks = args.random_blocks
+        random_blocks = getattr(args, "random_blocks", 0)
 
         # 1. frontend
         if args.input_size is None:
@@ -784,6 +774,7 @@ class ASRTask(AbsTask):
             joint_network=joint_network,
             token_list=token_list,
             blocks_training=blocks_training,
+            fixed_blocks=fixed_blocks,
             random_blocks=random_blocks,
             uniform_sampling=uniform_sampling,
             is_self_distilling=is_self_distilling,

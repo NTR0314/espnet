@@ -117,6 +117,7 @@ class DecoderLayer(nn.Module):
             if tgt_mask is not None:
                 tgt_q_mask = tgt_mask[:, -1:, :]
 
+        # [OSWALD]: in our default recipe = false
         if self.concat_after:
             tgt_concat = torch.cat(
                 (tgt_q, self.self_attn(tgt_q, tgt, tgt, tgt_q_mask)), dim=-1

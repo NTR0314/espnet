@@ -74,6 +74,7 @@ class ESPnetASRModel(AbsESPnetModel):
         extract_feats_in_collect_stats: bool = True,
         lang_token_id: int = -1,
         blocks_training: int = 0,
+        fixed_blocks: int = 0,
         random_blocks: int = 0,
         uniform_sampling: bool = False,
         is_self_distilling: bool = False,
@@ -125,6 +126,8 @@ class ESPnetASRModel(AbsESPnetModel):
 
 
         # OSWALD:
+        self.fixed_blocks = fixed_blocks
+        logging.info(f"[Approach 2]: {self.fixed_blocks=}")
         self.blocks_training = blocks_training
         logging.info(f"[Approach 2]: {self.blocks_training=}")
         self.random_blocks = random_blocks
@@ -403,8 +406,11 @@ class ESPnetASRModel(AbsESPnetModel):
             # [OSWALD]: KLDivLoss expects input to be in log space
             if self.is_self_distilling:
                 kl_loss = self._calc_kl_loss(encoder_out_no_masking, encoder_out_lens, text, text_lengths, attn_masked_context, utt_ids = kwargs['utt_id'])
-                stats['kl_loss'] = kl_loss * self.distill_weight
+                stats['kl_loss'] = kl_loss.detach() #idk if detach() is necesarry and why? 
+                # import logging
+                # logging.info(f"{loss=}")
                 loss = loss + self.distill_weight * kl_loss
+                # logging.info(f"{loss=}")
 
             if self.use_timing_loss:
                 use_libri_timings = 'w_timing_libri' in kwargs
@@ -440,6 +446,8 @@ class ESPnetASRModel(AbsESPnetModel):
             stats["wer"] = wer_att
 
         # Collect total loss stats
+        # import logging
+        # logging.info(f"{loss=}")
         stats["loss"] = loss.detach()
 
         # force_gatherable: to-device and to-tensor if scalar for DataParallel
@@ -474,7 +482,6 @@ class ESPnetASRModel(AbsESPnetModel):
             speech_lengths: (Batch, )
         """
 
-        # if not torch.all(speech_lengths == speech_lengths[0]):
         with autocast(False):
             # 1. Extract feats
             feats, feats_lengths = self._extract_feats(speech, speech_lengths)
@@ -496,118 +503,171 @@ class ESPnetASRModel(AbsESPnetModel):
         if also_full_context:
             feats_full_context = feats.clone().detach()
 
+        # TODO: Add timing for librispeech evaluation
         # Start Masking from t_{EOS} <=> equivalent to adding t_{EOA} - t_{EOU} to masking
-        if "timing_path" in kwargs: # use mfa timings (for eval):
+        utt_id = kwargs['utt_id']
+        if "timing_path" in kwargs and kwargs["timing_path"] != "": # use mfa timings (for eval):
+            # OSWALD: SWBD Eval: MFA
             import textgrid
             from pathlib import Path
-            utt_id = kwargs['utt_id']
             filepath = Path(kwargs["timing_path"]) / (kwargs["utt_id"][0] + ".TextGrid") # inference always use batchsize 1 -> only one utt_id
             tg = textgrid.TextGrid.fromFile(filepath)
             spans = [x for x in tg[0] if x.mark != '']
             lasto = spans[-1].maxTime
             # OSWALD: in eval there is no speed perturb so no scaling needed
             lasto = lasto * 100 # in 10ms blocks
-            additional_blocks = feats_lengths - lasto
-        else:
-            use_libri_timings = 'w_timing_libri' in kwargs
-            if not use_libri_timings:
-                # iirc in 10ms steps = 1 frame
-                utt_id = kwargs['utt_id']
-                w_timing = kwargs['w_timing']
-                start_times = torch.tensor([int(x.split('_')[1].split('-')[0]) for x in utt_id])
-                mask = w_timing != -1
-                w_timing = torch.where(mask, w_timing - start_times.unsqueeze(-1).to(w_timing.device), w_timing)
-                w_timing = w_timing.float()
-                for i in range(len(utt_id)):
-                    if 'sp0.9-' in utt_id[i]:
-                        w_timing[i][w_timing[i] != -1] /= 0.9
-                    elif 'sp1.1-' in utt_id[i]:
-                        w_timing[i][w_timing[i] != -1] /= 1.1
-                w_timing = torch.round(w_timing).int()
-                eous = w_timing.gather(1, (mask.sum(dim=1) - 1).unsqueeze(-1))
-                additional_blocks = feats_lengths - eous.squeeze()
-                if additional_blocks.min() < -1:
-                    print(additional_blocks, w_timing, feats_lengths)
-                    print(utt_id)
-                    import pdb;pdb.set_trace()
+            eous = lasto
+        elif 'w_timing_libri' in kwargs and kwargs['w_timing_libri'] != "":
+            # Libri Training
+            w_timing = kwargs['w_timing_libri'] # in seconds
+            w_timing = w_timing * 100 # in 10 ms = block size
+            for i in range(len(utt_id)):
+                if 'sp0.9-' in utt_id[i]:
+                    w_timing[i][w_timing[i] != -1] /= 0.9
+                elif 'sp1.1-' in utt_id[i]:
+                    w_timing[i][w_timing[i] != -1] /= 1.1
+            # https://github.com/CorentinJ/librispeech-alignments
+            # The alignments always end on a silence, hence the second last timing is the timing of the last word before the padding (0.0)
+            # TODO: Optimize for GPU instead of looping over batch
+            eous = []
+            for i, w_t in enumerate(w_timing):
+                eou_ind = torch.nonzero(torch.flip(w_t, dims=[0]))[0] + 2
+                eous.append(w_t[- eou_ind])
+            eous = torch.tensor(eous).to(feats_lengths.device).int()
+        elif 'w_timing' in kwargs and kwargs["w_timing"] != "":
+            # SWBD Train/Valid: non MFA
+            w_timing = kwargs['w_timing'] # in 10ms
+            start_times = torch.tensor([int(x.split('_')[1].split('-')[0]) for x in utt_id])
+            mask = w_timing != -1
+            w_timing = torch.where(mask, w_timing - start_times.unsqueeze(-1).to(w_timing.device), w_timing)
+            w_timing = w_timing.float()
+            for i in range(len(utt_id)):
+                if 'sp0.9-' in utt_id[i]:
+                    w_timing[i][w_timing[i] != -1] /= 0.9
+                elif 'sp1.1-' in utt_id[i]:
+                    w_timing[i][w_timing[i] != -1] /= 1.1
+            w_timing = w_timing.int()
+            eous = w_timing.gather(1, (mask.sum(dim=1) - 1).unsqueeze(-1)).squeeze()
+
+        elif 'timing_path_libri' in kwargs and kwargs["timing_path_libri"] != "":
+            # OSWALD: This is for evaluation. In evalation there is not speed perturb thus no adjustment of eou is needed.
+            import textgrid
+            from pathlib import Path
+            filepath = Path(kwargs["timing_path_libri"]) / (kwargs["utt_id"][0] + ".TextGrid") # inference always use batchsize 1 -> only one utt_id)
+            tg = textgrid.TextGrid.fromFile(filepath)
+            spans = [x for x in tg[0] if x.mark != '']
+            lasto = spans[-1].maxTime
+            lasto = lasto * 100 # in 10ms blocks
+            eous = lasto
+
+        additional_blocks = feats_lengths - eous
+        self.decoder.additional_blocks = additional_blocks
+        if additional_blocks.min() < -1:
+            print(additional_blocks, w_timing, feats_lengths)
+            print(utt_id)
+            import pdb;pdb.set_trace()
 
         if self.preencoder is not None:
             feats, feats_lengths = self.preencoder(feats, feats_lengths)
 
-        # Mask training blocks
-        if self.blocks_training != 0 and not is_inference:
-            if debug_logging:
-                logging.info(f"[Approach 2]: Masking encoder frames: {self.blocks_training=}")
-            if not self.uniform_sampling:
-                exit() # gaussian sucks
-                mask_sub_val = numpy.abs(numpy.random.normal(loc = 0.0, scale = self.blocks_training, size=feats_lengths.shape))
-            else:
-                np_rng = numpy.random.default_rng()
-                mask_sub_val = np_rng.uniform(0, self.blocks_training, size=feats_lengths.shape)
-            mask_sub_val = torch.tensor(mask_sub_val).int().to(feats_lengths.device)
+        sliding_approach=False
+        slide_mask_len = 50
+        if not sliding_approach:
+            # Mask training blocks
+            if self.blocks_training != 0 and not is_inference:
+                if debug_logging:
+                    logging.info(f"[Approach 2]: Masking encoder frames: {self.blocks_training=}")
+                if not self.uniform_sampling:
+                    exit() # gaussian sucks
+                else:
+                    np_rng = numpy.random.default_rng()
+                    mask_sub_val = np_rng.uniform(self.fixed_blocks, self.blocks_training, size=feats_lengths.shape)
+                    # Adjust for speed perturbation
+                    for i in range(len(utt_id)):
+                        if 'sp0.9-' in utt_id[i]:
+                            mask_sub_val[i] /= 0.9
+                        elif 'sp1.1-' in utt_id[i]:
+                            mask_sub_val[i] /= 1.1
+                mask_sub_val = torch.tensor(mask_sub_val).int().to(feats_lengths.device)
 
-            self.current_masking_blocks = mask_sub_val.detach().cpu().numpy()
-            # Save the masking amount for plotting purposes in decoder
-            self.decoder.mask_sub_val = mask_sub_val
+                self.current_masking_blocks = mask_sub_val.detach().cpu().numpy()
+                # Save the masking amount for plotting purposes in decoder
+                self.decoder.mask_sub_val = mask_sub_val
 
-            total_blocks = mask_sub_val + additional_blocks
+                total_blocks = mask_sub_val + additional_blocks
 
+                for i in range(feats.shape[0]): # loop over batch
+                    feats[i, feats_lengths[i] - total_blocks[i] : feats_lengths[i], :] = 0.0
+            if is_inference:
+                test_set_decoding = True
+                if not test_set_decoding:
+                    exit() # Prolly not what I want during my thesis
+                else:
+                    total_inf_blocks = additional_blocks + blocks_inference
+                    total_inf_blocks = int(total_inf_blocks.item())
+                    # Inference no padding therefore starting masking from end of feats is OK
+                    feats[:, -total_inf_blocks:, :] = 0.0
+                    if debug_logging:
+                        logging.info(f"[Approach 2]: Zeroing out the last {blocks_inference} blocks. For live inference thecode needs to be adjusted.")
+                        logging.info(f"[Approach 2 DEBUG]: Total encoder feats_lengths {feats_lengths}. This corresponds to {feats_lengths * 10} ms audio len .")
+
+            # RANDOM BLOCKS
+            if self.random_blocks != 0 and not is_inference:
+                if not self.uniform_sampling:
+                    #random_block_val = numpy.random.normal(loc = 0.0, scale = self.random_blocks, size=feats_lengths.shape)
+                    exit() # gaussian = bad
+                else:
+                    np_rng = numpy.random.default_rng()
+                    random_block_val = np_rng.uniform(-self.random_blocks, self.random_blocks, size=feats_lengths.shape)
+                    for i in range(len(utt_id)):
+                        if 'sp0.9-' in utt_id[i]:
+                            random_block_val[i] /= 0.9
+                        elif 'sp1.1-' in utt_id[i]:
+                            random_block_val[i] /= 1.1
+                random_block_val = torch.tensor(random_block_val).int().to(feats_lengths.device)
+                # Save random block val to decoder for plotting
+                self.decoder.random_block_val = random_block_val
+                self.current_random_blocks = random_block_val.detach().cpu().numpy()
+
+                # Used for new padding
+                cur_len = feats.shape[1]
+                max_new_len = (random_block_val + feats_lengths).max()
+                pad_needed = max_new_len - cur_len
+                pad_needed_0 = max(0, pad_needed)
+
+                tgt_shape = list(feats.shape)
+                tgt_shape[1] = pad_needed_0
+
+                feats = torch.cat([feats, torch.zeros(tgt_shape).to(feats.device)], 1)
+
+                # TODO: Overthink whole logic. Edge case was missing that if pad_needed is negative feats need to be trimmed.
+                if pad_needed < 0:
+                    feats = feats[:, :pad_needed.squeeze().item(), :]
+
+                feats_lengths = feats_lengths + random_block_val.type(feats_lengths.dtype)
+                feats_lengths = torch.clamp(feats_lengths, min=0)
+
+                if also_full_context:
+                    feats_full_context = torch.cat([feats_full_context, torch.zeros(tgt_shape).to(feats.device)], 1)
+
+        else:
+            logging.info(f"shift approach of yosuke not implemented yet")
+            exit() # 
+            # 1. Sample lshift value in [0, rand_blocks + mask_blocks]
+            np_rng = numpy.random.default_rng()
+            shift_vals = np_rng.uniform(0, self.random_blocks + self.blocks_training, size=feats_lengths.shape)
+            shift_vals = torch.tensor(shift_vals).to(feats_lengths.device).int()
+
+            # 2. Delete all words that are after the end of masking, e.g., after t_{EOA} - shift_vals
+            # 2.1 Get all subwords to match the word timings -> TODO: do outside of encode()
+            self.shift_vals = shift_vals
+
+            # 3. Apply static 500ms masking
+            feats_lengths = feats_lengths - additional_blocks - shift_vals
             for i in range(feats.shape[0]): # loop over batch
                 # Mask feats to 0.0
-                feats[i, feats_lengths[i] - total_blocks[i] : feats_lengths[i], :] = 0.0
-        # Mask inference blocks
-        if blocks_inference != 0 and is_inference:
-            test_set_decoding = True
-            if not test_set_decoding:
-                exit() # Prolly not what I want during my thesis
-                if debug_logging:
-                    logging.info(f"[Approach 2]: Adding {blocks_inference} inference blocks. This mode intended for live mode with full audio. Increase feats_lengths from {feats_lengths} to {feats_lengths + blocks_inference}")
-                tgt_shape = list(feats.shape)
-                tgt_shape[1] = blocks_inference
-                feats = torch.cat([feats, torch.zeros(tgt_shape).to(feats.device)], 1)
-                feats_lengths = feats_lengths + blocks_inference
-            else:
-                # TODO change to mask from t_{EOS}
-                total_inf_blocks = additional_blocks + blocks_inference
-                total_inf_blocks = int(total_inf_blocks.item())
-                feats[:, -total_inf_blocks:, :] = 0.0
-                if debug_logging:
-                    logging.info(f"[Approach 2]: Zeroing out the last {blocks_inference} blocks. For live inference thecode needs to be adjusted.")
-                    logging.info(f"[Approach 2 DEBUG]: Total encoder feats_lengths {feats_lengths}. This corresponds to {feats_lengths * 10} ms audio len .")
-
-        # RANDOM BLOCKS
-        if self.random_blocks != 0 and not is_inference:
-            if debug_logging:
-                logging.info(f"[Approach 2]: Using {self.random_blocks} random_blocks. Adding random amount of pos. encoding blocks with mean {self.random_blocks}. This message should not appear during inference.")
-            if not self.uniform_sampling:
-                random_block_val = numpy.random.normal(loc = 0.0, scale = self.random_blocks, size=feats_lengths.shape)
-                exit() # gaussian = bad
-            else:
-                np_rng = numpy.random.default_rng()
-                random_block_val = np_rng.uniform(0, self.random_blocks, size=feats_lengths.shape)
-            random_block_val = torch.tensor(random_block_val).int().to(feats_lengths.device)
-            # Save random block val to decoder for plotting
-            self.decoder.random_block_val = random_block_val
-            self.current_random_blocks = random_block_val.detach().cpu().numpy()
-
-            # Used for new padding
-            cur_len = feats.shape[1]
-            max_new_len = (random_block_val + feats_lengths).max()
-            pad_needed = max(0, max_new_len - cur_len)
-
-            tgt_shape = list(feats.shape)
-            tgt_shape[1] = pad_needed
-
-            feats = torch.cat([feats, torch.zeros(tgt_shape).to(feats.device)], 1)
-            feats_lengths = feats_lengths + random_block_val.type(feats_lengths.dtype)
-            feats_lengths = torch.clamp(feats_lengths, min=0)
-
-            if also_full_context:
-                feats_full_context = torch.cat([feats_full_context, torch.zeros(tgt_shape).to(feats.device)], 1)
-
-            if debug_logging:
-                logging.info(f"[Approach 2]:after: {feats.shape=}")
-                logging.info(f"[Approach 2]:after: {feats_lengths}")
+                import pdb;pdb.set_trace()
+                feats[i, feats_lengths[i]-slide_mask_len:, :] = 0.0
 
 
         # 4. Forward encoder
@@ -631,13 +691,12 @@ class ESPnetASRModel(AbsESPnetModel):
                     assert torch.equal(enc_out_lens_fc, encoder_out_lens)
 
         intermediate_outs = None
-        if isinstance(encoder_out, tuple):
+        if isinstance(encoder_out, tuple):#OSWALD: nope
             intermediate_outs = encoder_out[1]
             encoder_out = encoder_out[0]
 
         # Post-encoder, e.g. NLU
-        # OSWALD: Nope
-        if self.postencoder is not None:
+        if self.postencoder is not None:#OSWALD: nope
             encoder_out, encoder_out_lens = self.postencoder(
                 encoder_out, encoder_out_lens
             )
@@ -649,7 +708,7 @@ class ESPnetASRModel(AbsESPnetModel):
         if (
             getattr(self.encoder, "selfattention_layer_type", None) != "lf_selfattn"
             and not self.is_encoder_whisper
-            and not self.random_blocks != 0
+            and self.random_blocks == 0
         ):
             assert encoder_out.size(-2) <= encoder_out_lens.max(), (
                 encoder_out.size(),
@@ -775,7 +834,10 @@ class ESPnetASRModel(AbsESPnetModel):
         ys_in_lens = ys_pad_lens + 1
 
         padding_mask_encoder = make_pad_mask(encoder_out_lens)
-        padding_mask_encoder = padding_mask_encoder.unsqueeze(1).unsqueeze(1).unsqueeze(0).expand(masked_x_attn.shape)
+        try:
+            padding_mask_encoder = padding_mask_encoder.unsqueeze(1).unsqueeze(1).unsqueeze(0).expand(masked_x_attn.shape)
+        except:
+            import pdb;pdb.set_trace()
 
         # Make mask for decoder
         batch_size = masked_x_attn.shape[1]
@@ -813,7 +875,7 @@ class ESPnetASRModel(AbsESPnetModel):
             import logging
             logging.info(f"There was nan loss in kl_loss not in mask_part.")
 
-        dump_per_epoch = True
+        dump_per_epoch = False
         if dump_per_epoch:
             from pathlib import Path
             import numpy as np
@@ -846,8 +908,11 @@ class ESPnetASRModel(AbsESPnetModel):
                         np.save(path / uid / "masking_info.npy", savi)
                         self.saved_examples[str(self.epoch)] += 1
 
-        # remove padding parts: encoder and decoder
-        loss = loss.mean()
+        # TODO: Higuchi: the average is taken with the amount of padded elements as well -> wrong averaging -> needs fix.
+        # Get amount of non padded elements:
+        # loss = loss.mean()
+        non_pads = torch.sum(~combined_mask)
+        loss = torch.sum(loss) / non_pads
 
         return loss
 
@@ -921,6 +986,7 @@ class ESPnetASRModel(AbsESPnetModel):
                 att_labels_heads[i, -1, len(end_timings):, :] = -1
 
             elif use_libri_timings:
+                logging.info(f"no explicit loss implementation for librispeech yet sorry")
                 exit() # Not implemented yet
                 last_timing = w_timing[i].squeeze() * 1000 / 40 # in s -> ms -> 40ms enc blocke
 
@@ -938,6 +1004,7 @@ class ESPnetASRModel(AbsESPnetModel):
             att_labels_heads = att_labels_heads[:,:,-1, :, :].unsqueeze(2)
         if self.only_last_timing:
             masked_x_attn = masked_x_attn[:,:,:,-1,:].unsqueeze(3)
+            logging.info(f"only_last_timing not implemented yet. sorry")
             exit() # Not implemented
             # att_labels_heads = att_labels_heads[:,:,:,text_lengths[,:].unsqueeze(3)
 

@@ -223,11 +223,19 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
             y = x[:, -1]
         if return_hs:
             hidden = y
+        if self.use_tuple_loss:
+            t_hat = self.tuple_layer(y)
         if self.output_layer is not None:
             y = torch.log_softmax(self.output_layer(y), dim=-1)
+            # OSWALD: Modify output probs to lower P(EOS)
+            # log space so instead of x * 0.1 -> x + log(0.1)
+            # I think can assume batch size always one since this is only used during inference?
+            y[0][self.eos_token] += torch.log(torch.tensor(self.eos_weight))
 
         if return_hs:
             return (y, hidden), new_cache
+        if self.use_tuple_loss:
+            return y, new_cache, t_hat
         return y, new_cache
 
     def score(self, ys, state, x, return_hs=False):
@@ -300,14 +308,22 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
                 ys, ys_mask, xs, cache=batch_state, return_hs=return_hs
             )
         else:
-            logp, states = self.forward_one_step(
-                ys, ys_mask, xs, cache=batch_state, return_hs=return_hs
-            )
+            # OSWALD
+            if self.use_tuple_loss:
+                logp, states, t_hat = self.forward_one_step(
+                    ys, ys_mask, xs, cache=batch_state, return_hs=return_hs
+                )
+            else:
+                logp, states = self.forward_one_step(
+                    ys, ys_mask, xs, cache=batch_state, return_hs=return_hs
+                )
 
         # transpose state of [layer, batch] into [batch, layer]
         state_list = [[states[i][b] for i in range(n_layers)] for b in range(n_batch)]
         if return_hs:
             return (logp, hs), state_list
+        if self.use_tuple_loss:
+            return logp, state_list, t_hat
         return logp, state_list
 
 

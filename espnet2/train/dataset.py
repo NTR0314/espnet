@@ -591,9 +591,13 @@ class ESPnetDataset(AbsDataset):
         # 2. [Option] Apply preprocessing
         #   e.g. espnet2.train.preprocessor:CommonPreprocessor
         if self.preprocess is not None:
+            # logging.info(f"{data=}")
             data = self.preprocess(uid, data)
 
         # 3. Force data-precision
+        # [OSWALD]: 
+        # logging.info(f"{data=}")
+        # import pdb;pdb.set_trace()
         for name in data:
             value = data[name]
             if not isinstance(value, np.ndarray):

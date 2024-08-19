@@ -496,8 +496,45 @@ class CommonPreprocessor(AbsPreprocessor):
                     data[name] = np.array(text_ints, dtype=np.int64)
         return data
 
-    # OSWALD: General function for swbd and librispeech timings. Should be renamed but rn cba
+    # OSWALD: General function for swbd and librispeech timings. 
     def _str_timestamps_process(self, data, uid):
+        # import logging
+        # logging.info(f"{data=}")
+        # logging.info(f"{uid=}")
+        if 'timing_swbd_eval2000' in data:
+            if self.tokenizer is None:
+                raise Error("Must have tokenizer to embed words of word timings.")
+            # 0,0 initialization is for sos which should have timing 0
+            tmp = []
+            td = data['timing_swbd_eval2000']
+            for d in td:
+                wo, sto = d
+                b = float(sto)
+                subwords = self.tokenizer.text2tokens(wo)
+                text_ints = self.token_id_converter.tokens2ids(subwords)
+                for subword, text_int in zip(subwords, text_ints):
+                    # import logging
+                    # logging.info(f"{subword=}")
+                    # logging.info(f"{text_int=}")
+                    tmp.append(b)
+            res = np.array(tmp)
+            data['timing_swbd_eval2000'] = res
+
+        if 'timing_libri_test_clean' in data:
+            if self.tokenizer is None:
+                raise Error("Must have tokenizer to embed words of word timings.")
+            # 0,0 initialization is for sos which should have timing 0
+            tmp = []
+            td = data['timing_libri_test_clean']
+            for d in td:
+                wo, sto = d
+                b = float(sto)
+                subwords = self.tokenizer.text2tokens(wo)
+                for _ in subwords:
+                    tmp.append(b)
+            res = np.array(tmp)
+            data['timing_libri_test_clean'] = res
+
         if 'w_timing' in data:
             if self.tokenizer is None:
                 raise Error("Must have tokenizer to embed words of word timings.")
@@ -518,11 +555,9 @@ class CommonPreprocessor(AbsPreprocessor):
                         tmp = tmp + [a, b]
             res = np.array(tmp)
             data['w_timing'] = res
-        #TODO implement for librispeech timings
         if 'w_timing_libri' in data:
-            # Make it very simple and only return last timing
-            lasto = [t for w, t in data['w_timing_libri'] if w != ''][-1]
-            data['w_timing_libri'] = np.array([float(lasto)]).astype(np.float32)
+            last_timings = [t for w, t in data['w_timing_libri'] if w != '']
+            data['w_timing_libri'] = np.array([last_timings]).astype(np.float32).squeeze()
 
         return data
 
@@ -532,7 +567,6 @@ class CommonPreprocessor(AbsPreprocessor):
         self, uid: str, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
 
-        # logging.info(f"\n\n{data =}\n\n")
         data = self._str_timestamps_process(data, uid)
         data = self._speech_process(data)
         data = self._text_process(data)

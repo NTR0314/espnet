@@ -31,6 +31,9 @@ blocks_training=
 # OSWALD: Used for approach2 swbd timings
 use_swbd_timings=false
 use_libri_timings=false
+# OSWALD: Used for evaluating masked tokens WER
+decode_only_masked=false
+decode_only_masked_swbd=false
 
 # General configuration
 stage=1              # Processes starts from the specified stage.
@@ -1612,6 +1615,17 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         # [OSWALD]: set gpu
         echo "Exporting CUDA_VISIBLE_DEVICES to ${gpu_id}"
         export CUDA_VISIBLE_DEVICES=${gpu_id}
+        # [OSWALD]: Set text ground truth data_path_and_name_and_type here if option is set
+        if ${decode_only_masked}; then
+          _opts+="--data_path_and_name_and_type /export/data2/ozink/librispeech_100/raw/test_clean/text,text_gt_libri,text "
+          _opts+="--data_path_and_name_and_type /project/OML/master_theses/ozink/Waseda/espnet/egs2/librispeech_100/asr1/force_alignments/LibriSpeech/test-clean/mfa_test-clean.txt,timing_libri_test_clean,str_timestamps_libri "
+          _opts+="--allow_variable_data_keys true "
+        fi
+        if ${decode_only_masked_swbd}; then
+          _opts+="--data_path_and_name_and_type /export/data2/ozink/raw/eval2000/text,text_gt_swbd,text "
+          _opts+="--data_path_and_name_and_type /project/OML/master_theses/ozink/Waseda/espnet/egs2/swbd/asr1/force_alignment/single_file_mfa_swbd.txt,timing_swbd_eval2000,str_timestamps_libri "
+          _opts+="--allow_variable_data_keys true "
+        fi
 
         # shellcheck disable=SC2046,SC2086
         ${_cmd} --gpu "${_ngpu}" JOB=1:"${_nj}" "${_logdir}"/asr_inference.JOB.log \
@@ -1698,12 +1712,14 @@ if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ] && ! [[ " ${skip_stages} " =~
             _scoredir="${_dir}/score_${_type}"
             mkdir -p "${_scoredir}"
 
-            # shellcheck disable=SC2068
+            # shellcheck disable=SC2068 # OSWALD: only text in this loop
             for ref_txt in ${ref_text_files[@]}; do
+
                 # Note(simpleoier): to get the suffix after text, e.g. "text_spk1" -> "_spk1"
                 suffix=$(echo ${ref_txt} | sed 's/text//')
 
                 # Tokenize text to ${_tok_type} level
+                echo ${_data}/${ref_txt}
                 paste \
                     <(<"${_data}/${ref_txt}" \
                         ${python} -m espnet2.bin.tokenize_text  \
@@ -1754,11 +1770,13 @@ if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ] && ! [[ " ${skip_stages} " =~
         done
     done
 
+    # [OSWALD]: This file does not exist in the librispeech dir -> don't need to worry about it for n_best script
     [ -f local/score.sh ] && local/score.sh ${local_score_opts} "${asr_exp}"
 
     # Show results in Markdown syntax
-    scripts/utils/show_asr_result.sh "${asr_exp}" > "${asr_exp}"/RESULTS.md
-    cat "${asr_exp}"/RESULTS.md
+    # OSWALD: idk why but this uses a find command that takes forever on my machine (too many folders?) so just ignore this step
+    # scripts/utils/show_asr_result.sh "${asr_exp}" > "${asr_exp}"/RESULTS.md
+    # cat "${asr_exp}"/RESULTS.md
 
 fi
 

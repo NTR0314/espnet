@@ -14,6 +14,7 @@ from itertools import groupby
 import numpy as np
 
 
+# [OSWALD]: if the score of hyps keeps getting lower than threshold D_end for M consecutive steps -> ended.
 def end_detect(ended_hyps, i, M=3, D_end=np.log(1 * np.exp(-10))):
     """End detection.
 

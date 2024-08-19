@@ -48,6 +48,8 @@ class BeamSearch(torch.nn.Module):
         return_hs: bool = False,
         hyp_primer: List[int] = None,
         normalize_length: bool = False,
+        # OSWALD
+        use_tuple_loss: bool = False,
     ):
         """Initialize beam search.
 
@@ -71,6 +73,8 @@ class BeamSearch(torch.nn.Module):
 
         """
         super().__init__()
+        # OSWALD
+        self.use_tuple_loss = use_tuple_loss
         # set scorers
         self.weights = weights
         self.scorers = dict()
@@ -343,6 +347,7 @@ class BeamSearch(torch.nn.Module):
                 hs, scores, states = self.score_full(hyp, x, pre_x=pre_x)
             else:
                 scores, states = self.score_full(hyp, x, pre_x=pre_x)
+            # [Oswald]: 
             for k in self.full_scorers:
                 weighted_scores += self.weights[k] * scores[k]
             # partial scoring
@@ -393,7 +398,8 @@ class BeamSearch(torch.nn.Module):
         text_gt = None,
         utt_key = None,
         save_path=None,
-        first_masked_frame=0,
+        masked=None,
+        non_masked=None,
     ) -> List[Hypothesis]:
         """Perform beam search.
 
@@ -436,47 +442,64 @@ class BeamSearch(torch.nn.Module):
         else:
             minlen = int(minlenratio * inp.size(0))
         logger.info("decoder input length: " + str(inp.shape[0]))
+        logger.info(f"OSWALD: eou silence in 40ms blocks: {self.full_scorers['decoder'].additional_blocks / 4}")
         logger.info("max output length: " + str(maxlen))
         logger.info("min output length: " + str(minlen))
 
-        running_hyps = self.init_hyp(x if pre_x is None else pre_x, text_gt)
+        if non_masked is not None and len(non_masked) > 0:
+            running_hyps = self.init_hyp(x if pre_x is None else pre_x, non_masked)
+            i_start = len(non_masked)
+        else:
+            running_hyps = self.init_hyp(x if pre_x is None else pre_x)
+            i_start = 0
         ended_hyps = []
-        i_start = 0 if text_gt is None else len(text_gt)
         for i in range(i_start, maxlen):
             logger.debug("position " + str(i))
-            # Glaube hier wird alles durch den Decoder gejagt
-            # [OSWALD]: Hier wird die search Funktion von batch beam serach afgerufen
-            best = self.search(running_hyps, x, pre_x=pre_x)
+            if self.use_tuple_loss:
+                best, times = self.search(running_hyps, x, pre_x=pre_x)
+            else:
+                best = self.search(running_hyps, x, pre_x=pre_x)
+            # [OSWALD]:
+            # print()
+            # print(best.yseq[:, -1])
             # [OSWALD]: Save attn_w here  because here we know if the decoding has ended
             # atm batchsize is 1 ... need to fix for beamsearch
-            if best.yseq[0][-1] == self.eos:
-                import os
-                os.makedirs(save_path / 'attn_dir', exist_ok=True)
-                step = best.yseq.shape[1] - 1
-                layer = 6
-                file_name = f'utt_{utt_key}_step_{step:03}'
-                full_path = save_path / 'attn_dir' / file_name
-                attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
-                import numpy as np
-                np.save(full_path, attn_dump)
-            # Code above saves att dump of EOS token. But also save each step attn to analyze monotonicity
-            save_all_att = True
-            if save_all_att:
-                import os
-                os.makedirs(save_path / 'attn_dir_all_steps' / utt_key , exist_ok=True)
-                with open(save_path/'attn_dir_all_steps'/'blocks_inference.txt','w+') as f:
-                    # TODO OSWALD saving this each decoding step xD -> ugly
-                    f.write(f"{self.full_scorers['decoder'].blocks_inference}")
-                step = best.yseq.shape[1] - 1
-                # for now only look at last layer
-                layer = 6
-                file_name = f'utt_{utt_key}_step_{step:03}'
-                full_path = save_path / 'attn_dir_all_steps' / utt_key / file_name
-                attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
-                import numpy as np
-                np.save(full_path, attn_dump)
 
-            # post process of one iteration
+            if True: # just for debug
+                if best.yseq[0][-1] == self.eos:
+                    import os
+                    os.makedirs(save_path / 'attn_dir', exist_ok=True)
+                    step = best.yseq.shape[1] - 1
+                    file_name = f'utt_{utt_key}_step_{step:03}'
+                    full_path = save_path / 'attn_dir' / file_name
+                    attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
+                    import numpy as np
+                    np.save(full_path, attn_dump)
+                # Code above saves att dump of EOS token. But also save each step attn to analyze monotonicity
+                # temp set to False to save disk space
+                save_all_att = False
+                if save_all_att:
+                    import os
+                    os.makedirs(save_path / 'attn_dir_all_steps' / utt_key , exist_ok=True)
+                    with open(save_path/'attn_dir_all_steps'/'blocks_inference.txt','w+') as f:
+                        # TODO OSWALD saving this each decoding step xD -> ugly
+                        f.write(f"{self.full_scorers['decoder'].blocks_inference}")
+                    step = best.yseq.shape[1] - 1
+                    # for now only look at last layer
+                    layer = 6
+                    file_name = f'utt_{utt_key}_step_{step:03}'
+                    full_path = save_path / 'attn_dir_all_steps' / utt_key / file_name
+                    attn_dump = self.full_scorers['decoder'].decoders[5].src_attn.attn.cpu().numpy()
+                    import numpy as np
+                    np.save(full_path, attn_dump)
+                    # OSWALD: Also save timing if used in all steps
+                    if self.use_tuple_loss:
+                        os.makedirs(save_path / 'tuple_timings' / utt_key , exist_ok=True)
+                        full_path = save_path / 'tuple_timings' / utt_key / file_name
+                        np.save(full_path, times)
+
+
+            # OSWALD
             running_hyps = self.post_process(
                 i, maxlen, minlen, maxlenratio, best, ended_hyps
             )
