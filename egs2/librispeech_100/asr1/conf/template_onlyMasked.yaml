@@ -1,0 +1,11 @@
+beam_size: 8
+ctc_weight: 0.3
+lm_weight: 0.0
+maxlenratio: 0.0
+minlenratio: 0.0
+penalty: 0.0
+nbest: 5
+
+#[OSWALD]:
+blocks_inference: TEMPLATE
+timing_path_libri: "/project/OML/master_theses/ozink/Waseda/espnet/egs2/librispeech_100/asr1/force_alignments/mfa_libri/test-clean"
