@@ -1,0 +1,11 @@
+beam_size: 1
+ctc_weight: 0.3
+lm_weight: 0.0
+maxlenratio: 0.0
+minlenratio: 0.0
+penalty: 0.0
+
+#[OSWALD]:
+blocks_inference: 50
+timing_path: "/project/OML/master_theses/ozink/Waseda/espnet/egs2/swbd/asr1/force_alignment/mfa_eval2000_aligned"
+eos_weight: 0.59948425

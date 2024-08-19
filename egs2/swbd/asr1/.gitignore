@@ -1,0 +1,8 @@
+*.png
+backup_exp/
+eval2000_wavs/
+force_alignment/
+node_modules/
+package-lock.json
+package.json
+idk_old_scripts/

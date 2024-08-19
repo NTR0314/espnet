@@ -9,12 +9,12 @@ train_set=train_nodup
 valid_set=train_dev
 test_sets="eval2000"
 
-asr_config=conf/tuning/train_asr_conformer_lr2e-3_warmup15k_amp_nondeterministic_masked_training_causal_random_enc_len_uniform_swbd.yaml
-inference_config=conf/decode_asr_approach2.yaml
+asr_config=conf/tuning/19.yaml
+inference_config="conf/600ms.yaml"
 
 ./asr.sh \
     --lang en \
-    --ngpu 6 \
+    --ngpu 2 \
     --token_type bpe \
     --nj 16 \
     --gpu_inference true \
@@ -29,4 +29,5 @@ inference_config=conf/decode_asr_approach2.yaml
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
+    --use_swbd_timings true \
     --bpe_train_text "data/${train_set}/text" "$@" \
