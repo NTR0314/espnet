@@ -1,45 +1,83 @@
+"""
+This script is used to generate the plot discussed with Mr. Kobayashi including timing prediction results and WER rates.
+
+"""
+
 import glob
 import numpy as np
 import pickle
 import re
 from pathlib import Path
 import matplotlib.pyplot as plt
+import argparse
 
-base_paths = glob.glob("../exp/asr_26_raw_en_bpe5000_sp/*ms_asr_model_valid.acc.ave/")
+parser = argparse.ArgumentParser()
+parser.add_argument("-bp", "--base_path")
+parser.add_argument("--plot_n_best", action="store_true", help="Plot n_best maskedWERs for all bps")
+parser.add_argument("--plot_all_alpha", action="store_true")
+parser.add_argument("--swbd", action="store_true")
+parser.add_argument("--dev", action="store_true")
+parser.add_argument("--figname")
+parser.add_argument("--prefix")
+parser.add_argument("--alpha", help="Only print this alpha")
+args = parser.parse_args()
+
+base_path = Path(args.base_path)
 results = {}
 results_wer = {}
 results_wer_masked_only = {}
-for base_path in base_paths:
-    diffs = {}
-    attn_dir = Path(base_path) / "test_clean" / "attn_dir"
-    pickle_results = attn_dir.glob('result*.pkl')
-    mask_duration = re.search(r'(\d+)ms', base_path).group(1)
+diffs = {}
 
-    for pickle_result in pickle_results:
-        alpha = "1"
-        alpha_re = re.search('alpha(\d+).pkl', str(pickle_result))
-        if alpha_re != None:
-            alpha = alpha_re.group(1)
+if args.swbd:
+    if args.dev:
+        test_set_name = "org/train_dev"
+    else:
+        test_set_name = "eval2000"
+else:
+    if args.dev:
+        print("not implemented. exiting")
+        exit()
+    else:
+        print("not implemented. exiting")
+        exit()
 
-        diffs[alpha] = []
-        with open(pickle_result, "rb") as f:
-            r = pickle.load(f)
-            for uid, td in r.items():
-                diffs[alpha].append(td)
-        diffs[alpha] = np.array(diffs[alpha])
-    num_alphas = len(diffs)
+# Get inference_paths
+attn_dir = Path(base_path) / test_set_name / "attn_dir"
+pickle_results = attn_dir.glob('result*.pkl')
+import pdb;pdb.set_trace()
+mask_duration = re.search(r'(\d+)ms', base_path).group(1)
 
-    results[int(mask_duration)] = diffs
+for pickle_result in pickle_results:
+    alpha = "1"
+    alpha_re = re.search('alpha(\d+).pkl', str(pickle_result))
+    if args.alpha != None:
+        if alpha != args.alpha:
+            continue
+    if alpha_re != None:
+        alpha = alpha_re.group(1)
 
-    # WER
-    wer_path = Path(base_path) / "test_clean" / "score_wer" / "result.txt"
-    with open(wer_path, 'rb') as f:
-        wer_lines = f.readlines()
-    wer = float([x for x in wer_lines if 'Mean' in str(x)][0].split()[-3])
-    results_wer[int(mask_duration)] = wer
+    diffs[alpha] = []
+    with open(pickle_result, "rb") as f:
+        r = pickle.load(f)
+        for uid, td in r.items():
+            diffs[alpha].append(td)
+    diffs[alpha] = np.array(diffs[alpha])
+num_alphas = len(diffs)
+
+results[int(mask_duration)] = diffs
+
+# WER
+wer_path = Path(base_path) / "test_clean" / "score_wer" / "result.txt"
+with open(wer_path, 'rb') as f:
+    wer_lines = f.readlines()
+wer = float([x for x in wer_lines if 'Mean' in str(x)][0].split()[-3])
+results_wer[int(mask_duration)] = wer
 
 # Masked WER
-base_paths = glob.glob("../exp/asr_26_raw_en_bpe5000_sp/*ms_onlyMasked_asr_model_valid.acc.ave/")
+if args.prefix != None:
+    base_paths = glob.glob(f"../exp/asr_26_raw_en_bpe5000_sp/*ms_{args.prefix}_onlyMasked_asr_model_valid.acc.ave/")
+else:
+    base_paths = glob.glob("../exp/asr_26_raw_en_bpe5000_sp/*ms_onlyMasked_asr_model_valid.acc.ave/")
 for base_path in base_paths:
     wer_path = Path(base_path) / "test_clean" / "score_wer" / "result.txt"
     mask_duration = re.search(r'(\d+)ms', base_path).group(1)
@@ -82,9 +120,8 @@ for i, alphas_dict in enumerate(diffs_dicts_alphas): #[0ms, 100ms ..]
             patch.set_facecolor(colors[j])
         print(j, f"{alpha=}")
 
-fig.suptitle('Librispeech test results')
 ax.set_ylabel('Absolute timing prediction difference in ms')
-ax.set_xlabel('Masking duration from end of utterance in ms')
+# ax.set_xlabel('Masking duration from end of utterance in ms')
 wer_ax = ax.twinx()
 wer_mo_ax = ax.twinx()
 wer_mo_ax.spines['right'].set_position(('outward', 60))
@@ -92,12 +129,12 @@ wer_mo_ax.spines['right'].set_position(('outward', 60))
 wer_ax.set_ylabel('WER')
 wer_mo_ax.set_ylabel('WER masked tokens only')
 p2 = wer_ax.plot(positions, wers, marker='D', label="WER of all tokens.", color=color1)
-p3 = wer_mo_ax.plot(positions, wers_masked_only, marker='D', label="WER of masked tokens only. Half masked tokens are included.", color=color2)
+# p3 = wer_mo_ax.plot(positions, wers_masked_only, marker='D', label="WER of masked tokens only. Half masked tokens are included.", color=color2)
+# wer_mo_ax.yaxis.label.set_color(p3[0].get_color())
 
 wer_ax.yaxis.label.set_color(p2[0].get_color())
-wer_mo_ax.yaxis.label.set_color(p3[0].get_color())
 
-ax.axhline(y=0)
+ax.axhline(y=0, color='black')
 
 fig.legend()
-plt.savefig("koba_plot_libri.png", bbox_inches='tight')
+plt.savefig(f"{args.figname}.png", bbox_inches='tight')
