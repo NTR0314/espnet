@@ -1,3 +1,11 @@
+"""
+This file uses the dumped attention weights during inference to calculate the timing prediction differences using
+the MFA timings. It saves an intermediary file called `result.pkl`
+
+This intermediary file is used by other scripts, such as plotting.
+"""
+
+
 import pickle
 import textgrid
 from pathlib import Path
@@ -22,6 +30,7 @@ print(f"{args.alpha=}")
 mfa_eval_path = args.at
 mfa_files = os.listdir(mfa_eval_path)
 timing_dict = {}
+
 # load mfa files
 for file in mfa_files:
     if ".TextGrid" not in file:
@@ -37,9 +46,19 @@ for att_file_name in os.listdir(attn_dir):
     if not ".npy" in att_file_name:
         continue
 
-    # utt_908-31957-0020_step_019.npy
-    match = re.search('utt_(\d+-\d+-\d+)_step_\d+.npy', att_file_name)
-    utt_id = match.group(1)
+    # LIBRI: utt_908-31957-0020_step_019.npy
+    # SWBD: utt_sw02001-A_000098-001156_step_036.npy
+    # SWBD test: utt_en_4966-A_065993-066715_step_040.npy
+    # SWBD test: utt_sw_4824-A_004423-004562_step_002.npy
+    # SWBD dev: utt_sw02022-B_032570-032898_step_007.npy
+    try:
+        match = re.search('utt_(e?n?s?w?_?[sw\d]+-[AB_\d]+-\d+)_step_\d+.npy', att_file_name)
+        utt_id = match.group(1)
+    except:
+        print("An unexpected error occured.")
+        print(att_file_name)
+        import pdb;pdb.set_trace()
+
     att_w = numpy.load(attn_dir / att_file_name)
     # remove d = 1 dim
     att_w = att_w.squeeze()
@@ -59,7 +78,7 @@ for att_file_name in os.listdir(attn_dir):
     results[utt_id] = actual_mfa_timing - pred_timing
 
 # Preview
-print(f"avg is: {numpy.array([x for x in iter(results.values())]).mean()}")
+print(f"{attn_dir}:\t\tavg is: {numpy.array([x for x in iter(results.values())]).mean():.1f}\n")
 
 alpha_str = str(args.alpha).replace('.','')
 save_file_name = 'result.pkl' if args.alpha == 1.0 else f'result_alpha{alpha_str}.pkl'
