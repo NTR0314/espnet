@@ -1,11 +1,8 @@
-"""
-This file automates the calculation of mWER. It internally uses the `s13_rm_unmasked_tokens.py` script.
-Internally it creates two text files that have only masked or partially masked tokens in them for both the hypothesis
-and the reference.
+# This file automates the calculation of mWER. It internally uses the `s13_rm_unmasked_tokens.py` script.
+# Internally it creates two text files that have only masked or partially masked tokens in them for both the hypothesis
+# and the reference.
 
-These files are then renamed and used by the default ESPNET stage 13 WER calculation.
-
-"""
+# These files are then renamed and used by the default ESPNET stage 13 WER calculation.
 
 if [[ -z $1 ]]; then
     echo "arg1 run file"
