@@ -66,7 +66,6 @@ do
 
     for n_best_path in $n_best_paths
     do
-        # python3 "/project/OML/master_theses/ozink/Waseda/espnet/egs2/librispeech_100/asr1/inference/rm_dubs_nbest.py" "${n_best_path}"
         n_best_parent=$(dirname $n_best_path)
         diff <(cut -d ' ' -f 1 ${hyp_path}) <(cut -d ' ' -f 1 $n_best_path ) | rg '<' | cut -f 2 -d ' ' >> "${n_best_parent}/empty_utts.txt"
         cat "${n_best_parent}/empty_utts.txt" $n_best_path > "${n_best_parent}/text_with_missing_utt_unsorted.txt"
