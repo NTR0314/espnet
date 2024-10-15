@@ -6,3 +6,7 @@ node_modules/
 package-lock.json
 package.json
 idk_old_scripts/
+*.png
+*.gzip
+*_*0*.sh
+mWER*.txt
