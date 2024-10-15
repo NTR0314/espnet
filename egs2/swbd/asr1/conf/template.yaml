@@ -8,3 +8,4 @@ penalty: 0.0
 #[OSWALD]:
 blocks_inference: TEMPLATE
 timing_path: "/project/OML/master_theses/ozink/Waseda/espnet/egs2/swbd/asr1/force_alignment/mfa_eval2000_aligned"
+# timing_path: "/project/OML/master_theses/ozink/Waseda/espnet/egs2/swbd/asr1/force_alignment/mfa_dev_aligned/"
