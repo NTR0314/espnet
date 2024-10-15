@@ -1309,8 +1309,6 @@ def main(cmd=None):
     #     kwargs['ctc_weight']=0.0
     #     logging.info(f"Using {kwargs['ctc_weight']=} for i_lm_test decoding")
 
-    # [OSWALD]: Idk how to get the acrual save path (exp/
-
     inference(**kwargs)
 
 
