@@ -571,12 +571,9 @@ class ESPnetASRModel(AbsESPnetModel):
             feats, feats_lengths = self.preencoder(feats, feats_lengths)
 
         sliding_approach=False
-        slide_mask_len = 50
         if not sliding_approach:
             # Mask training blocks
-            if self.blocks_training != 0 and not is_inference:
-                if debug_logging:
-                    logging.info(f"[Approach 2]: Masking encoder frames: {self.blocks_training=}")
+            if not is_inference:
                 if not self.uniform_sampling:
                     exit() # gaussian sucks
                 else:
@@ -591,7 +588,6 @@ class ESPnetASRModel(AbsESPnetModel):
                 mask_sub_val = torch.tensor(mask_sub_val).int().to(feats_lengths.device)
 
                 self.current_masking_blocks = mask_sub_val.detach().cpu().numpy()
-                # Save the masking amount for plotting purposes in decoder
                 self.decoder.mask_sub_val = mask_sub_val
 
                 total_blocks = mask_sub_val + additional_blocks
@@ -599,22 +595,13 @@ class ESPnetASRModel(AbsESPnetModel):
                 for i in range(feats.shape[0]): # loop over batch
                     feats[i, feats_lengths[i] - total_blocks[i] : feats_lengths[i], :] = 0.0
             if is_inference:
-                test_set_decoding = True
-                if not test_set_decoding:
-                    exit() # Prolly not what I want during my thesis
-                else:
-                    total_inf_blocks = additional_blocks + blocks_inference
-                    total_inf_blocks = int(total_inf_blocks.item())
-                    # Inference no padding therefore starting masking from end of feats is OK
-                    feats[:, -total_inf_blocks:, :] = 0.0
-                    if debug_logging:
-                        logging.info(f"[Approach 2]: Zeroing out the last {blocks_inference} blocks. For live inference thecode needs to be adjusted.")
-                        logging.info(f"[Approach 2 DEBUG]: Total encoder feats_lengths {feats_lengths}. This corresponds to {feats_lengths * 10} ms audio len .")
+                total_inf_blocks = additional_blocks + blocks_inference
+                total_inf_blocks = int(total_inf_blocks.item())
+                feats[:, -total_inf_blocks:, :] = 0.0# Inference no padding therefore starting masking from end of feats is OK
 
             # RANDOM BLOCKS
-            if self.random_blocks != 0 and not is_inference:
+            if not is_inference:
                 if not self.uniform_sampling:
-                    #random_block_val = numpy.random.normal(loc = 0.0, scale = self.random_blocks, size=feats_lengths.shape)
                     exit() # gaussian = bad
                 else:
                     np_rng = numpy.random.default_rng()
@@ -666,7 +653,6 @@ class ESPnetASRModel(AbsESPnetModel):
             feats_lengths = feats_lengths - additional_blocks - shift_vals
             for i in range(feats.shape[0]): # loop over batch
                 # Mask feats to 0.0
-                import pdb;pdb.set_trace()
                 feats[i, feats_lengths[i]-slide_mask_len:, :] = 0.0
 
 
