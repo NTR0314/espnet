@@ -54,8 +54,8 @@ batch_bins: 32000000
 # 6 GPUs == 2
 #accum_grad: 16
 accum_grad: 2
-max_epoch: 150
-patience: 5
+max_epoch: 100
+patience: 10
 init: none
 best_model_criterion:
 -   - valid
