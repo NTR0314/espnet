@@ -1421,7 +1421,6 @@ if [ ${stage} -le 11 ] && [ ${stop_stage} -ge 11 ] && ! [[ " ${skip_stages} " =~
         _opts+="--use_nlp_prompt ${use_nlp_prompt} "
     fi
 
-    # [OSWALD]: swbd timings
     if ${use_libri_timings}; then
       _opts+="--allow_variable_data_keys True "
       _opts+="--train_data_path_and_name_and_type /export/data2/ozink/librispeech_100/mfa_train100.txt,w_timing_libri,str_timestamps_libri "
@@ -1617,6 +1616,7 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         export CUDA_VISIBLE_DEVICES=${gpu_id}
         # [OSWALD]: Set text ground truth data_path_and_name_and_type here if option is set
         if ${decode_only_masked}; then
+          # [OSWALD]: For finetuning \alpha on dev set need to change GT path
           _opts+="--data_path_and_name_and_type /export/data2/ozink/librispeech_100/raw/test_clean/text,text_gt_libri,text "
           _opts+="--data_path_and_name_and_type /project/OML/master_theses/ozink/Waseda/espnet/egs2/librispeech_100/asr1/force_alignments/LibriSpeech/test-clean/mfa_test-clean.txt,timing_libri_test_clean,str_timestamps_libri "
           _opts+="--allow_variable_data_keys true "
@@ -1639,6 +1639,7 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
                 --output_dir "${_logdir}"/output.JOB \
                 ${_opts} ${inference_args} || { cat $(grep -l -i error "${_logdir}"/asr_inference.*.log) ; exit 1; }
 
+        # # [OSWALD]: Some bugs when adding custom print statements in decoding log
         # 3. Calculate and report RTF based on decoding logs
         if [ ${asr_task} == "asr" ] && [ -z ${inference_bin_tag} ]; then
             log "Calculating RTF & latency... log: '${_logdir}/calculate_rtf.log'"
