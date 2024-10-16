@@ -4,3 +4,4 @@ backup_exp/
 *.gzip
 *_*0*.sh
 mWER*.txt
+old_run_scripts/
