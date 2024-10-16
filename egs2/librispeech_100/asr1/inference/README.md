@@ -60,3 +60,11 @@ bash inference/auto_inf_maskedOnlyWER.sh 63_29_neu_500_onlyMasked.sh exp/asr_63_
 
 `1_calc_preds_for_hist.py`:
 - Used internally, e.g., in auto_plots.sh
+
+`attn_vis_script.py`:
+- Used to generate attn matrix plot
+- Expects dir to attention dump as path
+
+
+`timing_audio_len_comp.py` and `timing_comparison.py`:
+- Used for plotting timing predictions against EUA or another timing prediction respectively.
