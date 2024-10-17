@@ -18,7 +18,6 @@ The following files were changed for masked training:
   - Changes for reading custom inputs, e.g., MFA timings
 - 
 
-
 ## Datasets:
 - LS100
 - SWBD
@@ -48,6 +47,25 @@ use_single_head: true
 only_last_layer_timing: true
 timing_loss_weight: 0
 ```
+
+## Usual workflow
+1. Training:
+Run something like:
+```
+./63_29_neu.sh --stage 11 --stop_stage 11 --gpu_id '0,1,2,3,4'
+```
+
+2. Inference:
+    1. Run normal inference with `inference/auto_inf_script.sh`
+    2. Run maskedOnly inference with `inference/auto_inf_maskedOnly_script.sh`
+    3. (optionally) Run n-best inference again with same script as above
+    4. Evaluate the inference with:
+        1. `inference/auto_inf_maskedOnlyWER.sh` and `inference/auto_inf_maskedOnlyWER_nbest.sh` for mWER.
+        2. `inference/auto_plots.sh` for timing results, that also creates a plot.
+        3. (When debugging) run `inference/attn_vis_script.py` for attn plot visualization (might be outdated, havent run in a long time)
+3. Plotting:
+Optionally create final plot with `inference/plot_koba_cmp.py`. Needs manual results as textfiles though.
+
 
 ---
 ---
