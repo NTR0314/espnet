@@ -1,3 +1,55 @@
+# Changes made by me (Oswald)
+## Main files:
+The following files were changed for masked training:
+- `egs2/TEMPLATE/asr1/asr.sh` 
+- `espnet/nets/batch_beam_search.py`
+- `espnet/nets/beam_search.py`
+- `espnet2/asr/decoder/transformer_decoder.py`
+- `espnet2/asr/encoder/conformer_encoder.py` and `espnet/nets/pytorch_backend/conformer/convolution.py`
+  - Causality of encoder
+- `espnet2/asr/espnet_model.py`
+  - Most changes in this file
+  - Different losses KL/explicit/masking are implemented here.
+- `espnet2/bin/asr_inference.py`
+  - Core changes for prefixing groundtruth when only decoding masked tokens
+- `espnet2/tasks/asr.py`
+  - Necessary changes to pass through arguments to subsequent files
+- `espnet2/train/iterable_dataset.py` and `espnet2/train/preprocessor.py` and `espnet2/fileio/read_text.py` and `espnet2/train/dataset.py`
+  - Changes for reading custom inputs, e.g., MFA timings
+- 
+
+
+## Datasets:
+- LS100
+- SWBD
+Both for LS100 and SWBD there several scripts in the `inference` subfolder.
+These include scripts for running the inference (stages 12 and 13) for WER/mWER/timing and plotting.
+The masking training shell scripts can be found in the base `asr1` dir. Which refer to the corresponding configs in the `conf/tuning` subfolder. The main added options are the following:
+```
+# 1 block := 10 ms interval. Because it is done before conv of Conformer.
+blocks_training: 50
+
+# +-[0, 450ms] added/substracted pos.encoding only.
+random_blocks: 20
+# For both blocks_training and random_blocks
+uniform_sampling: true
+
+# If encoder should have causal attention
+is_causal: true
+
+# OSWALD: Self distilling attention loss
+is_self_distilling: false
+use_last_head_distill: false
+
+# OSWALD: Must be used together. No time to create ChoiceClass
+use_timing_loss: false
+only_last_timing: false
+use_single_head: true
+only_last_layer_timing: true
+timing_loss_weight: 0
+```
+
+
 <div align="left"><img src="doc/image/espnet_logo1.png" width="550"/></div>
 
 # ESPnet: end-to-end speech processing toolkit
