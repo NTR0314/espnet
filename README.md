@@ -49,6 +49,8 @@ only_last_layer_timing: true
 timing_loss_weight: 0
 ```
 
+---
+---
 
 <div align="left"><img src="doc/image/espnet_logo1.png" width="550"/></div>
 
