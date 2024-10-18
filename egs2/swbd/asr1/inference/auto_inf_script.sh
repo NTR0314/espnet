@@ -1,7 +1,8 @@
 if [[ $# -lt 3 ]]; then
     echo "This script needs to be run from base dir: swbd/libri"
-    echo "arg1 run sh file: 31_26_005ctc.sh"
-    echo "arg2 gpu 1 arg3 gpu2"
+    echo "mandatory arg1: run sh file: e.g., 31_26_005ctc.sh"
+    echo "mandatory arg2 gpu_id 1"
+    echo "mandatory arg3: gpu_id 2"
     echo "optional arg4: beam_size"
     echo "optional arg5: suffix (for own results in exp folder)"
     echo "optional arg6: Use dev set? Any non null string will change from test to dev"
