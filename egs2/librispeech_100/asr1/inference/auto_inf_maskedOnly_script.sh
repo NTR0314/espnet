@@ -9,7 +9,7 @@ if [[ $# -lt 3 ]]; then
     echo "arg1 runfile: 31_26_005ctc.sh"
     echo "arg2 gpu1"
     echo "arg3 gpu2"
-    echo "optional arg4: Use SWBD? (Switches path to GT data accordingly)"
+    echo "optional arg4: Use SWBD? Empty for LS100, e.g., \"\" (Switches path to GT data accordingly)"
     echo "optional arg5 ctc weight for inference if set sets the ctc weight from 0.3 to given value"
     echo "optional arg6 beam_size for inference. Default=1"
     echo "optional arg7 n_best for inference. Default=1"

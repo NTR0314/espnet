@@ -1,9 +1,9 @@
 # This script uses the scripts `1_calc_preds_for_hist.py` and `2_hist.py` to automatically calculate and generate histograms from the timing predictions
 if [ -z $1 ]
 then
-    echo "arg1: basepath"
-    echo "Basepath is the folder where all the inference_folders are store, e.g., exp/asr_xx_.../"
-    echo "This script needs to be called from the inference/ folder"
+    echo "NOTICE: This script needs to be called from the inference/ folder"
+    echo ""
+    echo "mandatory arg1: basepath, e.g., ../exp/asr_70_raw_en_bpe5000_sp/"
     echo "optional: arg2: alpha parameter for koba decoding"
     echo "optional arg3: prefix, e.g., 100ms_devAlpha_..."
     echo "optional arg4: if it is dev set -> different MFA path"

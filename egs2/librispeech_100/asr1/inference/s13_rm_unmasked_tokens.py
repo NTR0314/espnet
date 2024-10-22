@@ -127,6 +127,7 @@ if not args.SWBD:
             f.writelines(masked_hyps)
             masked_hyps_dict[int(n_best)] = masked_hyps
 
+# SWBD
 else:
     hyp_lines_dict = {}
     masked_hyps_dict = {}
@@ -193,6 +194,8 @@ if calc_wer:
     wers=[]
     for combined in zip(refs, *all_hyps):
         uid, ref = combined[0].strip().split(maxsplit=1)
+        if debug:
+            print(ref)
         best_wer = 9999999
         for hyp_line in combined[1:]:
             hyp_line=hyp_line.strip()
@@ -203,14 +206,13 @@ if calc_wer:
                 hyp = ''
             hyp_wer = wer(ref, hyp)
             if debug:
+                print(hyp_line)
                 print(hyp_wer)
             if hyp_wer < best_wer:
                 best_wer = hyp_wer
         wers.append(best_wer)
         if debug:
-            print(hyp_path)
             print(best_wer)
-            print()
     wers=np.array(wers)
     mean_wer=wers.mean() * 100
     print(f"{mean_wer:.1f}")

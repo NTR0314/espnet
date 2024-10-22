@@ -31,7 +31,7 @@ then
     echo "Using SWBD dataset"
 fi
 
-for masking_time in 100 200 300 400 500 600 700 800 900 1000
+for masking_time in 100 # 200 300 400 500 600 700 800 900 1000
 do
     # Adjust text files for hyp and ref (hyp based on arg2)
     python_path="/project/OML/master_theses/ozink/Waseda/espnet/egs2/librispeech_100/asr1/inference/s13_rm_unmasked_tokens.py"
@@ -73,10 +73,13 @@ do
         sort "${n_best_parent}/text_with_missing_utt_unsorted.txt" > "${n_best_parent}/text" 
     done
 
+    ref_backup="${ref_path}.backup"
+    echo $ref_backup
+
     if [[ -n "$5" ]]
     then
-        python3 ${python_path} --hyp_path $n_best_paths --ref_path ${ref_path} --inference_blocks ${masking_blocks} --calc_wer --num_n_best $n_best_num --SWBD
+        python3 ${python_path} --hyp_path $n_best_paths --ref_path ${ref_path} --inference_blocks ${masking_blocks} --calc_wer --num_n_best $n_best_num --SWBD || cp $ref_backup $ref_path
     else
-        python3 ${python_path} --hyp_path $n_best_paths --ref_path ${ref_path} --inference_blocks ${masking_blocks} --calc_wer --num_n_best $n_best_num
+        python3 ${python_path} --hyp_path $n_best_paths --ref_path ${ref_path} --inference_blocks ${masking_blocks} --calc_wer --num_n_best $n_best_num || cp $ref_backup $ref_path
     fi
 done
