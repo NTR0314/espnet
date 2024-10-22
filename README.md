@@ -52,16 +52,21 @@ timing_loss_weight: 0
 1. Training:
 Run something like:
 ```
-./63_29_neu.sh --stage 11 --stop_stage 11 --gpu_id '0,1,2,3,4'
+./70_test_setup.sh --stage 11 --stop_stage 11 --gpu_id '0,1,2,3,4'
 ```
 
 2. Inference:
     1. Run normal inference with `inference/auto_inf_script.sh`
+    For example: `bash inference/auto_inf_script.sh 70_test_setup.sh 0 1 1`
+    This normal inference also includes the WER evaluation that can be read with a command like: `rg 'Mean' exp/asr_70_raw_en_bpe5000_sp/*ms_asr_model_valid.acc.ave/test_clean/score_wer/result.txt --max-count 1`
     2. Run maskedOnly inference with `inference/auto_inf_maskedOnly_script.sh`
+    For example `bash inference/auto_inf_maskedOnly_script.sh 70_test_setup.sh 2 3 "" 0.3 1 12 5 beam12best5 p` and used the printed commands to manually assign GPUs (high memory usage for high beamsizes.
     3. (optionally) Run n-best inference again with same script as above
     4. Evaluate the inference with:
         1. `inference/auto_inf_maskedOnlyWER.sh` and `inference/auto_inf_maskedOnlyWER_nbest.sh` for mWER.
-        2. `inference/auto_plots.sh` for timing results, that also creates a plot.
+        For example `bash inference/auto_inf_maskedOnlyWER_nbest.sh 70_test_setup.sh exp/asr_70_raw_en_bpe5000_sp/ 5 beam12best5noctc`
+        2. `inference/auto_plots.sh` for timing results, that also creates plots in the inference folder.
+        For example `bash auto_plots.sh ../exp/asr_70_raw_en_bpe5000_sp/ 0.1`
         3. (When debugging) run `inference/attn_vis_script.py` for attn plot visualization (might be outdated, havent run in a long time)
 3. Plotting:
 Optionally create final plot with `inference/plot_koba_cmp.py`. Needs manual results as textfiles though.
