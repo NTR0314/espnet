@@ -71,6 +71,8 @@ Run something like:
 3. Plotting:
   - Optionally create final plot with `inference/plot_koba_cmp.py`. Needs manual results as textfiles though.
 
+## Known issues:
+- Running `inference/auto_inf_maskedOnly_script.sh` with nbest and without creates the same bash file names even when provided with a suffix which might lead to complications?
 
 ---
 ---

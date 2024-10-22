@@ -31,7 +31,7 @@ then
     echo "Using SWBD dataset"
 fi
 
-for masking_time in 100 # 200 300 400 500 600 700 800 900 1000
+for masking_time in 100 200 300 400 500 # 600 700 800 900 1000
 do
     # Adjust text files for hyp and ref (hyp based on arg2)
     python_path="/project/OML/master_theses/ozink/Waseda/espnet/egs2/librispeech_100/asr1/inference/s13_rm_unmasked_tokens.py"
