@@ -564,7 +564,7 @@ class Speech2Text:
             # [OSWALD]: Implicitly check if we are using ground truth text as prompt for decoding
             if timing_libri_test_clean is not None:
                 logging.info(f"Using ground truth data during inference for decoding masked only. LibriSpeech.")
-                assert len(timing_libri_test_clean) == len(text_gt_libri)
+                assert len(timing_libri_test_clean) == len(text_gt_libri), (timing_libri_test_clean, text_gt_libri)
 
                 # sec into ms
                 timing_libri_test_clean *= 1000
