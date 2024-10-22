@@ -71,7 +71,8 @@ do
         let blocks="$time_ms / 10"
         sed -i -r -e "s/TEMPLATE/${blocks}/" $tgt_path
         sed -i -r -e "s/ctc_weight: 0.3/ctc_weight: ${ctc_inf_weight}/" $tgt_path
-        sed -i -re "s/beam_size: 1/beam_size: ${beam_size}/" $tgt_path
+        # sed -i -re "s/beam_size: 1/beam_size: ${beam_size}/" $tgt_path
+        sed -i -re "/beam_size:/c\\beam_size: ${beam_size}" $tgt_path
         sed -i -re "s/nbest: 5/nbest: ${n_best}/" $tgt_path
 
         base_name=$(basename $run_file)
@@ -95,7 +96,7 @@ do
             sed -i '31i\    --decode_only_masked true \\' $tgt_path
         fi
 
-        if [[ -n "$8" ]]
+        if [[ -n "$9" ]]
         then
             echo bash "$tgt_path" --stage 12 --stop_stage 12 --gpu_id \<TODO\> &
         else
