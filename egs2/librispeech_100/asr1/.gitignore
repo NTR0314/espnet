@@ -5,3 +5,6 @@ backup_exp/
 *_*0*.sh
 mWER*.txt
 old_run_scripts/
+run_oswald_default_comparison.sh
+34.sh
+*.tar*
