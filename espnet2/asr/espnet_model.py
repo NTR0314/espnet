@@ -91,6 +91,7 @@ class ESPnetASRModel(AbsESPnetModel):
         use_tuple_loss: bool = False,
         tuple_loss_weight: float = 0.,
         output_dir: str = "",
+        lwmp: int = -1,
     ):
         assert 0.0 <= ctc_weight <= 1.0, ctc_weight
         assert 0.0 <= interctc_weight < 1.0, interctc_weight
@@ -148,6 +149,7 @@ class ESPnetASRModel(AbsESPnetModel):
         self.tuple_loss_weight = tuple_loss_weight
         self.saved_examples = {}
         self.output_dir = output_dir
+        self.lwmp = lwmp
 
 
         if not hasattr(self.encoder, "interctc_use_conditioning"):
@@ -473,6 +475,7 @@ class ESPnetASRModel(AbsESPnetModel):
         blocks_inference: int = 0,
         also_full_context: bool = False,
         is_inference: bool = False,
+        lwmp: int = -1,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Frontend + Encoder. Note that this method is used by asr_inference.py
@@ -555,11 +558,18 @@ class ESPnetASRModel(AbsESPnetModel):
             from pathlib import Path
             filepath = Path(kwargs["timing_path_libri"]) / (kwargs["utt_id"][0] + ".TextGrid") # inference always use batchsize 1 -> only one utt_id)
             tg = textgrid.TextGrid.fromFile(filepath)
+            # spans are in seconds
             spans = [x for x in tg[0] if x.mark != '']
+            if lwmp != -1:
+                last_word_length = spans[-1].maxTime - spans[-1].minTime
+                # seconds -> 10ms (feature frames are in 10ms steps)
+                last_word_length *= 100
+                p_length = last_word_length * lwmp / 100
             lasto = spans[-1].maxTime
             lasto = lasto * 100 # in 10ms blocks
             eous = lasto
 
+        # blocks masking after EOU
         additional_blocks = feats_lengths - eous
         self.decoder.additional_blocks = additional_blocks
         if additional_blocks.min() < -1:
@@ -595,7 +605,10 @@ class ESPnetASRModel(AbsESPnetModel):
                 for i in range(feats.shape[0]): # loop over batch
                     feats[i, feats_lengths[i] - total_blocks[i] : feats_lengths[i], :] = 0.0
             if is_inference:
-                total_inf_blocks = additional_blocks + blocks_inference
+                if lwmp != -1:
+                    total_inf_blocks = additional_blocks + p_length
+                else:
+                    total_inf_blocks = additional_blocks + blocks_inference
                 total_inf_blocks = int(total_inf_blocks.item())
                 feats[:, -total_inf_blocks:, :] = 0.0# Inference no padding therefore starting masking from end of feats is OK
 

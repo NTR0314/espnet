@@ -477,7 +477,7 @@ class BeamSearch(torch.nn.Module):
                     np.save(full_path, attn_dump)
                 # Code above saves att dump of EOS token. But also save each step attn to analyze monotonicity
                 # temp set to False to save disk space
-                save_all_att = False
+                save_all_att = True
                 if save_all_att:
                     import os
                     os.makedirs(save_path / 'attn_dir_all_steps' / utt_key , exist_ok=True)

@@ -475,11 +475,19 @@ class Speech2Text:
 
     @torch.no_grad()
     @typechecked
-    def __call__(self, speech: Union[torch.Tensor, np.ndarray], text_gt=None, test_i_lm=False, i_lm_eval_cutoff=0, blocks_inference=0, utt_key=None, timing_path='', timing_path_libri='',
+    def __call__(self, speech: Union[torch.Tensor, np.ndarray],
+                 text_gt=None,
+                 test_i_lm=False,
+                 i_lm_eval_cutoff=0,
+                 blocks_inference=0,
+                 utt_key=None,
+                 timing_path='',
+                 timing_path_libri='',
                  timing_libri_test_clean=None, # Timings for librispeech test set
                  timing_swbd_eval2000=None, # Timings for librispeech test set
                  text_gt_libri=None, # Text GT for Librispeech (test st )
                  text_gt_swbd=None, # Text GT for SWBD (test set also)
+                 lwmp=-1,
                  ) -> Union[
         ListOfHypothesis,
         List[ListOfHypothesis],
@@ -522,6 +530,7 @@ class Speech2Text:
         }
         enc, enc_olens = self.asr_model.encode(**batch,
                                                blocks_inference = blocks_inference,
+                                               lwmp = lwmp,
                                                **kwargs,
                                                is_inference=True,
                                                )
@@ -710,8 +719,6 @@ class Speech2Text:
                     for module in self.beam_search.nn_dict.decoder.modules():
                         if hasattr(module, "setup_step"):
                             module.setup_step()
-            # OSWALD:
-            # import pdb;pdb.set_trace()
 
             # OSWALD: set min_len so single decoded token is not possible
             # self.minlenratio = 2. / enc.shape[0]
@@ -836,6 +843,8 @@ def inference(
     timing_path_libri: str = "",
     use_tuple_loss: bool = False,
     eos_weight: float = 1.0,
+    # TODO
+    lwmp = -1,
 ):
     if batch_size > 1:
         raise NotImplementedError("batch decoding is not implemented")
@@ -850,6 +859,7 @@ def inference(
         format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
     )
     logging.info(f"[Approach 2]: asr_inference.py {blocks_inference=}")
+    logging.info(f"[Approach 2]: asr_inference.py {lwmp=}")
 
     if ngpu >= 1:
         device = "cuda"
@@ -950,7 +960,6 @@ def inference(
 
             # logging.info(f"Currently decoding utterance_key: {keys[0]}")
             # logging.info(f"{batch=}")
-            # import pdb;pdb.set_trace()
 
             # N-best list of (text, token, token_int, hyp_object)
             try:
@@ -961,6 +970,7 @@ def inference(
                                       test_i_lm=test_i_lm,
                                       i_lm_eval_cutoff=i_lm_eval_cutoff,
                                       blocks_inference=blocks_inference,
+                                      lwmp=lwmp,
                                       utt_key=keys[0],
                                       timing_path=timing_path,
                                       timing_path_libri=timing_path_libri,
@@ -1292,6 +1302,11 @@ def get_parser():
         "--eos_weight",
         type=float,
         default=1.0,
+    )
+    group.add_argument(
+        "--lwmp",
+        type=int,
+        default=-1,
     )
     return parser
 
