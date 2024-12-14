@@ -10,8 +10,8 @@ valid_set="dev"
 test_sets="test_clean"
 
 # This asr_config is only for training, can stay the same for different decoding
-asr_config=conf/tuning/train_asr_conformer_lr2e-3_warmup15k_amp_nondeterministic.yaml
-inference_config=conf/decode_asr_normal_attn_vergleich.yaml
+asr_config="conf/tuning/default_reference_model_causal.yaml"
+inference_config="conf/500ms.yaml"
 
 ./asr.sh \
     --lang en \
@@ -31,4 +31,5 @@ inference_config=conf/decode_asr_normal_attn_vergleich.yaml
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
     --lm_train_text "data/${train_set}/text" \
-    --bpe_train_text "data/${train_set}/text" "$@"
+    --use_libri_timings true \
+    --bpe_train_text "data/${train_set}/text" "$@" \
